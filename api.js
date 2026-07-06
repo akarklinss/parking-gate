@@ -1,36 +1,35 @@
-const API_URL = "https://script.google.com/u/0/home/projects/1q9JbDZmk-9epuxnAX80amFfWLciyyfGUAFXTLdbmcZ3rVNYnNhdKAMK4/edit";
+const API_URL = "https://script.google.com/macros/s/AKfycbyX9nF5tnfuU0X9T9Fg1z4gGXeiQQ6e0BVn4uDocJH74bk5YJElw3NpSjmRniVH5n_K/exec";
 
 function jsonpRequest(params) {
   return new Promise((resolve, reject) => {
-    const callbackName = "pgCallback_" + Date.now() + "_" + Math.floor(Math.random() * 100000);
+    const callbackName = "pgCallback_" + Date.now();
 
     params.callback = callbackName;
+    params.cachebuster = Date.now();
 
     const query = new URLSearchParams(params).toString();
     const script = document.createElement("script");
 
     window[callbackName] = function(data) {
-      cleanup();
+      delete window[callbackName];
+      script.remove();
       resolve(data);
     };
 
     script.onerror = function() {
-      cleanup();
-      reject(new Error("Neizdevās sazināties ar Google Sheet API."));
-    };
-
-    function cleanup() {
       delete window[callbackName];
       script.remove();
-    }
+      reject(new Error("API skripts neielādējās. Pārbaudi API_URL vai deployment piekļuvi."));
+    };
 
     script.src = API_URL + "?" + query;
     document.body.appendChild(script);
 
     setTimeout(() => {
       if (window[callbackName]) {
-        cleanup();
-        reject(new Error("API neatbildēja laikā."));
+        delete window[callbackName];
+        script.remove();
+        reject(new Error("API neatbildēja 15 sekunžu laikā."));
       }
     }, 15000);
   });
