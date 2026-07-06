@@ -1,4 +1,4 @@
-const API_URL = "https://script.google.com/macros/s/AKfycbyX9nF5tnfuU0X9T9Fg1z4gGXeiQQ6e0BVn4uDocJH74bk5YJElw3NpSjmRniVH5n_K/exec";
+const API_URL = "https://script.google.com/u/0/home/projects/1q9JbDZmk-9epuxnAX80amFfWLciyyfGUAFXTLdbmcZ3rVNYnNhdKAMK4/edit";
 
 function jsonpRequest(params) {
   return new Promise((resolve, reject) => {
