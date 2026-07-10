@@ -1,129 +1,126 @@
-<!doctype html>
-<html lang="lv">
-  <head>
-    <meta charset="UTF-8" />
-    <meta
-      name="viewport"
-      content="width=device-width,initial-scale=1,viewport-fit=cover"
-    />
-    <meta name="theme-color" content="#111827" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <title>Parking Gate</title>
-    <link rel="manifest" href="manifest.json" />
-    <link rel="apple-touch-icon" href="icons/icon-192.png" />
-    <link rel="stylesheet" href="style.css?v=210" />
-    <script>
-      window.Module = {
-        onRuntimeInitialized() {
-          window.dispatchEvent(new Event("opencv-ready"));
-        },
-      };
-    </script>
-    <script async src="https://docs.opencv.org/4.x/opencv.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-  </head>
-  <body>
-    <div id="networkBanner" class="network online">ONLINE</div>
-    <main class="app">
-      <section id="setupScreen">
-        <h1>Parking Gate v2.1</h1>
-        <div class="card">
-          <label>Pasākuma nosaukums</label
-          ><input
-            id="eventNameInput"
-            placeholder="Summer Festival 2026"
-          /><label>Apps Script Web App URL</label
-          ><input
-            id="apiUrlInput"
-            type="url"
-            placeholder="https://script.google.com/macros/s/.../exec"
-          /><label>Pasākuma atslēga (neobligāti)</label
-          ><input id="eventKeyInput" type="password" /><label
-            >Gate / iebrauktuve</label
-          ><input id="gateInput" placeholder="VIP Gate" /><label>Apsargs</label
-          ><input id="guardInput" placeholder="Vārds vai ID" /><button
-            id="saveSetupBtn"
-          >
-            Pārbaudīt un sākt darbu
-          </button>
-          <p id="setupMessage"></p>
-        </div>
-      </section>
-      <section id="workScreen" class="hidden">
-        <header>
-          <div>
-            <h1 id="eventTitle">Parking Gate</h1>
-            <p><span id="gateLabel"></span> · <span id="guardLabel"></span></p>
-          </div>
-          <div class="header-buttons">
-            <button id="themeBtn" class="round">◐</button
-            ><button id="settingsBtn" class="round">⚙</button>
-          </div>
-        </header>
-        <div class="mode-switch">
-          <button id="entryModeBtn" class="mode active">IEBRAUKŠANA</button
-          ><button id="exitModeBtn" class="mode">IZBRAUKŠANA</button>
-        </div>
-        <div class="stats">
-          <button id="adminBtn">
-            <b id="totalCount">–</b><span>Sarakstā</span></button
-          ><button><b id="inCount">–</b><span>Teritorijā</span></button
-          ><button><b id="outCount">–</b><span>Izbraukuši</span></button>
-        </div>
-        <div class="card">
-          <div class="camera-wrap">
-            <video id="cameraPreview" autoplay playsinline muted></video>
-            <div class="plate-guide"></div>
-            <canvas id="captureCanvas"></canvas>
-          </div>
-          <div class="grid">
-            <button id="startCameraBtn">Sākt kameru</button
-            ><button id="scanPlateBtn" disabled>Nolasīt numuru</button>
-          </div>
-          <p id="cameraStatus">Kamera nav ieslēgta.</p>
-          <div id="platePreviewWrap" class="hidden">
-            <small>OpenCV atrastais laukums</small
-            ><canvas id="platePreviewCanvas"></canvas>
-          </div>
-        </div>
-        <div class="card">
-          <label>Auto numurs</label
-          ><input
-            id="plateInput"
-            class="plate"
-            maxlength="12"
-            placeholder="AB1234"
-          /><button id="processBtn" class="large">PĀRBAUDĪT / IELAIST</button
-          ><button id="clearBtn" class="secondary">Notīrīt</button>
-        </div>
-        <div id="suggestionBox" class="suggestion hidden">
-          <span>Vai domāts <b id="suggestedPlate"></b>?</span
-          ><button id="useSuggestionBtn">Izmantot</button>
-        </div>
-        <section id="resultCard" class="result neutral">
-          <div id="resultIcon">ⓘ</div>
-          <div id="resultTitle">Gatavs darbam</div>
-          <div id="resultPlate"></div>
-          <div id="resultDetails">Nolasiet vai ievadiet auto numuru.</div>
-        </section>
-      </section>
-    </main>
-    <dialog id="adminDialog">
-      <button id="closeAdminBtn" class="round close">✕</button>
-      <h2>Pasākuma pārskats</h2>
-      <div class="admin-stats">
-        <div><b id="adminTotal">–</b>Sarakstā</div>
-        <div><b id="adminReady">–</b>Gatavi</div>
-        <div><b id="adminIn">–</b>Teritorijā</div>
-        <div><b id="adminOut">–</b>Izbraukuši</div>
-        <div><b id="adminBlocked">–</b>Bloķēti</div>
-        <div><b id="adminExpired">–</b>Beidzies</div>
-      </div>
-      <button id="refreshAdminBtn">Atjaunot</button>
-      <div id="recentLogs"></div>
-    </dialog>
-    <script src="api.js?v=210"></script>
-    <script src="camera.js?v=210"></script>
-    <script src="app.js?v=210"></script>
-  </body>
-</html>
+import { createWorker } from 'tesseract.js';
+
+let cvPromise;
+let workerPromise;
+
+function loadOpenCv() {
+  if (window.cv?.Mat) return Promise.resolve(window.cv);
+  if (cvPromise) return cvPromise;
+  cvPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://docs.opencv.org/4.x/opencv.js';
+    script.async = true;
+    script.onload = async () => {
+      const started = Date.now();
+      while (Date.now() - started < 20000) {
+        const cv = window.cv && typeof window.cv.then === 'function' ? await window.cv : window.cv;
+        if (cv?.Mat) return resolve(cv);
+        await new Promise(r => setTimeout(r, 120));
+      }
+      reject(new Error('OpenCV neielādējās.'));
+    };
+    script.onerror = () => reject(new Error('OpenCV skripts neielādējās.'));
+    document.head.appendChild(script);
+  });
+  return cvPromise;
+}
+
+async function getWorker(onProgress) {
+  if (!workerPromise) {
+    workerPromise = createWorker('eng', 1, {
+      logger: message => {
+        if (message.status === 'recognizing text') onProgress?.(Math.round((message.progress || 0) * 100));
+      }
+    }).then(async worker => {
+      await worker.setParameters({
+        tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
+        tessedit_pageseg_mode: '7'
+      });
+      return worker;
+    });
+  }
+  return workerPromise;
+}
+
+function score(value, confidence) {
+  if (value.length < 4 || value.length > 9) return -100;
+  let result = confidence / 10 - Math.abs(6 - value.length);
+  if (/[A-Z]/.test(value) && /\d/.test(value)) result += 10;
+  if (/^[A-Z]{1,3}\d{1,4}$/.test(value)) result += 12;
+  if (/^[A-Z]{4,9}$/.test(value)) result -= 20;
+  return result;
+}
+
+function candidates(text) {
+  const values = String(text || '').toUpperCase().split(/\s+/)
+    .map(v => v.replace(/[^A-Z0-9]/g, ''))
+    .filter(v => v.length >= 4 && v.length <= 9);
+  const joined = String(text || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (joined.length >= 4 && joined.length <= 9) values.push(joined);
+  return [...new Set(values)];
+}
+
+function findPlate(cv, canvas, previewCanvas) {
+  const src = cv.imread(canvas), gray = new cv.Mat(), blur = new cv.Mat(), edges = new cv.Mat();
+  const closed = new cv.Mat(), contours = new cv.MatVector(), hierarchy = new cv.Mat();
+  const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(5, 3));
+  let best = null, bestScore = -Infinity;
+  try {
+    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+    cv.bilateralFilter(gray, blur, 9, 75, 75, cv.BORDER_DEFAULT);
+    cv.Canny(blur, edges, 60, 180);
+    cv.morphologyEx(edges, closed, cv.MORPH_CLOSE, kernel, new cv.Point(-1, -1), 2);
+    cv.findContours(closed, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
+    const imageArea = src.cols * src.rows;
+    for (let i = 0; i < contours.size(); i++) {
+      const contour = contours.get(i);
+      const area = Math.abs(cv.contourArea(contour));
+      const rect = cv.boundingRect(contour);
+      contour.delete();
+      const aspect = rect.width / Math.max(1, rect.height);
+      if (area < imageArea * .0015 || area > imageArea * .25 || rect.width < 80 || rect.height < 20 || aspect < 2 || aspect > 7) continue;
+      const cx = rect.x + rect.width / 2, cy = rect.y + rect.height / 2;
+      const center = 1 - Math.min(.8, Math.abs(cx - src.cols/2)/src.cols + Math.abs(cy - src.rows/2)/src.rows);
+      const current = 6/(1 + Math.abs(aspect - 4.5)) + center * 4 + Math.min(2, area/(imageArea*.02));
+      if (current > bestScore) { bestScore = current; best = rect; }
+    }
+    if (!best) throw new Error('Numurzīmes taisnstūris nav atrasts.');
+    const px = Math.round(best.width*.08), py = Math.round(best.height*.25);
+    const x = Math.max(0, best.x-px), y = Math.max(0, best.y-py);
+    const w = Math.min(src.cols-x, best.width+px*2), h = Math.min(src.rows-y, best.height+py*2);
+    const roi = src.roi(new cv.Rect(x,y,w,h));
+    const enlarged = new cv.Mat(), g = new cv.Mat(), normalized = new cv.Mat(), threshold = new cv.Mat();
+    cv.resize(roi, enlarged, new cv.Size(1100, Math.round(1100*h/w)), 0, 0, cv.INTER_CUBIC);
+    cv.cvtColor(enlarged, g, cv.COLOR_RGBA2GRAY);
+    cv.equalizeHist(g, normalized);
+    cv.adaptiveThreshold(normalized, threshold, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 31, 11);
+    cv.imshow(previewCanvas, threshold);
+    const colorCanvas = document.createElement('canvas'); cv.imshow(colorCanvas, enlarged);
+    const binaryCanvas = document.createElement('canvas'); cv.imshow(binaryCanvas, threshold);
+    roi.delete(); enlarged.delete(); g.delete(); normalized.delete(); threshold.delete();
+    return [binaryCanvas, colorCanvas];
+  } finally {
+    src.delete(); gray.delete(); blur.delete(); edges.delete(); closed.delete(); contours.delete(); hierarchy.delete(); kernel.delete();
+  }
+}
+
+export async function recognizePlate(frameCanvas, previewCanvas, onProgress) {
+  const cv = await loadOpenCv();
+  const images = findPlate(cv, frameCanvas, previewCanvas);
+  const worker = await getWorker(onProgress);
+  let best = { plate: '', score: -Infinity, confidence: 0 };
+  for (const image of images) {
+    const result = await worker.recognize(image);
+    for (const candidate of candidates(result.data.text)) {
+      const candidateScore = score(candidate, Number(result.data.confidence || 0));
+      if (candidateScore > best.score) best = { plate: candidate, score: candidateScore, confidence: result.data.confidence };
+    }
+  }
+  if (!/[A-Z]/.test(best.plate) || !/\d/.test(best.plate)) return { plate: '', confidence: best.confidence };
+  return best;
+}
+
+export const anprProviders = {
+  browser: { id: 'browser', label: 'Bezmaksas OCR ierīcē', recognize: recognizePlate },
+  external: { id: 'external', label: 'Ārējs ANPR (nākotnei)', recognize: async () => { throw new Error('Ārējais ANPR vēl nav konfigurēts.'); } }
+};
