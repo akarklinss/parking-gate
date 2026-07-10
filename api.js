@@ -1,57 +1,77 @@
-const API_URL = "https://script.google.com/macros/s/AKfycbyX9nF5tnfuU0X9T9Fg1z4gGXeiQQ6e0BVn4uDocJH74bk5YJElw3NpSjmRniVH5n_K/exec";
+const ApiClient = (() => {
+  let config = {
+    apiUrl: "",
+    eventKey: "",
+    gate: "",
+    guard: ""
+  };
 
-function jsonpRequest(params) {
-  return new Promise((resolve, reject) => {
-    const callbackName = "pgCallbackTest" + Date.now();
+  function configure(nextConfig) {
+    config = { ...config, ...nextConfig };
+  }
 
-    window[callbackName] = function(data) {
-      resolve(data);
-      delete window[callbackName];
-      script.remove();
-    };
-
-    const script = document.createElement("script");
-
-    const query =
-      Object.keys(params)
-        .map(key => encodeURIComponent(key) + "=" + encodeURIComponent(params[key]))
-        .join("&") +
-      "&callback=" + callbackName +
-      "&_=" + Date.now();
-
-    script.src = API_URL + "?" + query;
-
-    script.onload = function() {
-      // JSONP callback jau apstrādā atbildi
-    };
-
-    script.onerror = function() {
-      reject(new Error("API skripts neielādējās. URL vai piekļuve nav pareiza."));
-      delete window[callbackName];
-      script.remove();
-    };
-
-    document.head.appendChild(script);
-
-    setTimeout(() => {
-      if (window[callbackName]) {
-        reject(new Error("API neatbildēja 15 sekunžu laikā."));
-        delete window[callbackName];
-        script.remove();
+  function jsonpRequest(params, timeoutMs = 18000) {
+    return new Promise((resolve, reject) => {
+      if (!config.apiUrl) {
+        reject(new Error("Nav norādīts Apps Script API URL."));
+        return;
       }
-    }, 15000);
-  });
-}
 
-function checkPlateApi(plate) {
-  return jsonpRequest({
-    action: "check",
-    plate: plate
-  });
-}
+      let settled = false;
+      const callbackName =
+        "pgCallback_" + Date.now() + "_" + Math.floor(Math.random() * 1000000);
+      const script = document.createElement("script");
 
-function getStatsApi() {
-  return jsonpRequest({
-    action: "stats"
-  });
-}
+      const fullParams = {
+        ...params,
+        key: config.eventKey || "",
+        gate: config.gate || "",
+        guard: config.guard || "",
+        callback: callbackName,
+        _: Date.now()
+      };
+
+      function cleanup() {
+        if (script.parentNode) script.remove();
+        try { delete window[callbackName]; } catch (_) { window[callbackName] = undefined; }
+      }
+
+      function finish(handler, value) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        cleanup();
+        handler(value);
+      }
+
+      window[callbackName] = data => finish(resolve, data);
+
+      script.onerror = () =>
+        finish(reject, new Error("API skripts neielādējās. Pārbaudi Web App URL un piekļuvi."));
+
+      const query = Object.entries(fullParams)
+        .map(([key, value]) => encodeURIComponent(key) + "=" + encodeURIComponent(value))
+        .join("&");
+
+      script.src = config.apiUrl.replace(/\?+$/, "") + "?" + query;
+      document.head.appendChild(script);
+
+      const timer = setTimeout(() => {
+        finish(reject, new Error("API neatbildēja noteiktajā laikā."));
+      }, timeoutMs);
+    });
+  }
+
+  return {
+    configure,
+    ping: () => jsonpRequest({ action: "ping" }),
+    stats: () => jsonpRequest({ action: "stats" }),
+    recent: limit => jsonpRequest({ action: "recent", limit: String(limit || 20) }),
+    process: (mode, plate, source) =>
+      jsonpRequest({
+        action: mode === "exit" ? "exit" : "entry",
+        plate,
+        source: source || "MANUAL"
+      })
+  };
+})();
