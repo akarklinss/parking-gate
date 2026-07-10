@@ -1,14 +1,129 @@
-<!DOCTYPE html><html lang="lv"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#111827"><meta name="apple-mobile-web-app-capable" content="yes"><title>Parking Gate</title><link rel="manifest" href="manifest.json"><link rel="apple-touch-icon" href="icons/icon-192.png"><link rel="stylesheet" href="style.css?v=210"><script>window.Module={onRuntimeInitialized(){window.dispatchEvent(new Event('opencv-ready'));}};</script><script async src="https://docs.opencv.org/4.x/opencv.js"></script><script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script></head><body>
-<div id="networkBanner" class="network online">ONLINE</div>
-<main class="app">
-<section id="setupScreen"><h1>Parking Gate v2.1</h1><div class="card"><label>Pasākuma nosaukums</label><input id="eventNameInput" placeholder="Summer Festival 2026"><label>Apps Script Web App URL</label><input id="apiUrlInput" type="url" placeholder="https://script.google.com/macros/s/.../exec"><label>Pasākuma atslēga (neobligāti)</label><input id="eventKeyInput" type="password"><label>Gate / iebrauktuve</label><input id="gateInput" placeholder="VIP Gate"><label>Apsargs</label><input id="guardInput" placeholder="Vārds vai ID"><button id="saveSetupBtn">Pārbaudīt un sākt darbu</button><p id="setupMessage"></p></div></section>
-<section id="workScreen" class="hidden"><header><div><h1 id="eventTitle">Parking Gate</h1><p><span id="gateLabel"></span> · <span id="guardLabel"></span></p></div><div class="header-buttons"><button id="themeBtn" class="round">◐</button><button id="settingsBtn" class="round">⚙</button></div></header>
-<div class="mode-switch"><button id="entryModeBtn" class="mode active">IEBRAUKŠANA</button><button id="exitModeBtn" class="mode">IZBRAUKŠANA</button></div>
-<div class="stats"><button id="adminBtn"><b id="totalCount">–</b><span>Sarakstā</span></button><button><b id="inCount">–</b><span>Teritorijā</span></button><button><b id="outCount">–</b><span>Izbraukuši</span></button></div>
-<div class="card"><div class="camera-wrap"><video id="cameraPreview" autoplay playsinline muted></video><div class="plate-guide"></div><canvas id="captureCanvas"></canvas></div><div class="grid"><button id="startCameraBtn">Sākt kameru</button><button id="scanPlateBtn" disabled>Nolasīt numuru</button></div><p id="cameraStatus">Kamera nav ieslēgta.</p><div id="platePreviewWrap" class="hidden"><small>OpenCV atrastais laukums</small><canvas id="platePreviewCanvas"></canvas></div></div>
-<div class="card"><label>Auto numurs</label><input id="plateInput" class="plate" maxlength="12" placeholder="AB1234"><button id="processBtn" class="large">PĀRBAUDĪT / IELAIST</button><button id="clearBtn" class="secondary">Notīrīt</button></div>
-<div id="suggestionBox" class="suggestion hidden"><span>Vai domāts <b id="suggestedPlate"></b>?</span><button id="useSuggestionBtn">Izmantot</button></div>
-<section id="resultCard" class="result neutral"><div id="resultIcon">ⓘ</div><div id="resultTitle">Gatavs darbam</div><div id="resultPlate"></div><div id="resultDetails">Nolasiet vai ievadiet auto numuru.</div></section>
-</section></main>
-<dialog id="adminDialog"><button id="closeAdminBtn" class="round close">✕</button><h2>Pasākuma pārskats</h2><div class="admin-stats"><div><b id="adminTotal">–</b>Sarakstā</div><div><b id="adminReady">–</b>Gatavi</div><div><b id="adminIn">–</b>Teritorijā</div><div><b id="adminOut">–</b>Izbraukuši</div><div><b id="adminBlocked">–</b>Bloķēti</div><div><b id="adminExpired">–</b>Beidzies</div></div><button id="refreshAdminBtn">Atjaunot</button><div id="recentLogs"></div></dialog>
-<script src="api.js?v=210"></script><script src="camera.js?v=210"></script><script src="app.js?v=210"></script></body></html>
+<!doctype html>
+<html lang="lv">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#111827" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <title>Parking Gate</title>
+    <link rel="manifest" href="manifest.json" />
+    <link rel="apple-touch-icon" href="icons/icon-192.png" />
+    <link rel="stylesheet" href="style.css?v=210" />
+    <script>
+      window.Module = {
+        onRuntimeInitialized() {
+          window.dispatchEvent(new Event("opencv-ready"));
+        },
+      };
+    </script>
+    <script async src="https://docs.opencv.org/4.x/opencv.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  </head>
+  <body>
+    <div id="networkBanner" class="network online">ONLINE</div>
+    <main class="app">
+      <section id="setupScreen">
+        <h1>Parking Gate v2.1</h1>
+        <div class="card">
+          <label>Pasākuma nosaukums</label
+          ><input
+            id="eventNameInput"
+            placeholder="Summer Festival 2026"
+          /><label>Apps Script Web App URL</label
+          ><input
+            id="apiUrlInput"
+            type="url"
+            placeholder="https://script.google.com/macros/s/.../exec"
+          /><label>Pasākuma atslēga (neobligāti)</label
+          ><input id="eventKeyInput" type="password" /><label
+            >Gate / iebrauktuve</label
+          ><input id="gateInput" placeholder="VIP Gate" /><label>Apsargs</label
+          ><input id="guardInput" placeholder="Vārds vai ID" /><button
+            id="saveSetupBtn"
+          >
+            Pārbaudīt un sākt darbu
+          </button>
+          <p id="setupMessage"></p>
+        </div>
+      </section>
+      <section id="workScreen" class="hidden">
+        <header>
+          <div>
+            <h1 id="eventTitle">Parking Gate</h1>
+            <p><span id="gateLabel"></span> · <span id="guardLabel"></span></p>
+          </div>
+          <div class="header-buttons">
+            <button id="themeBtn" class="round">◐</button
+            ><button id="settingsBtn" class="round">⚙</button>
+          </div>
+        </header>
+        <div class="mode-switch">
+          <button id="entryModeBtn" class="mode active">IEBRAUKŠANA</button
+          ><button id="exitModeBtn" class="mode">IZBRAUKŠANA</button>
+        </div>
+        <div class="stats">
+          <button id="adminBtn">
+            <b id="totalCount">–</b><span>Sarakstā</span></button
+          ><button><b id="inCount">–</b><span>Teritorijā</span></button
+          ><button><b id="outCount">–</b><span>Izbraukuši</span></button>
+        </div>
+        <div class="card">
+          <div class="camera-wrap">
+            <video id="cameraPreview" autoplay playsinline muted></video>
+            <div class="plate-guide"></div>
+            <canvas id="captureCanvas"></canvas>
+          </div>
+          <div class="grid">
+            <button id="startCameraBtn">Sākt kameru</button
+            ><button id="scanPlateBtn" disabled>Nolasīt numuru</button>
+          </div>
+          <p id="cameraStatus">Kamera nav ieslēgta.</p>
+          <div id="platePreviewWrap" class="hidden">
+            <small>OpenCV atrastais laukums</small
+            ><canvas id="platePreviewCanvas"></canvas>
+          </div>
+        </div>
+        <div class="card">
+          <label>Auto numurs</label
+          ><input
+            id="plateInput"
+            class="plate"
+            maxlength="12"
+            placeholder="AB1234"
+          /><button id="processBtn" class="large">PĀRBAUDĪT / IELAIST</button
+          ><button id="clearBtn" class="secondary">Notīrīt</button>
+        </div>
+        <div id="suggestionBox" class="suggestion hidden">
+          <span>Vai domāts <b id="suggestedPlate"></b>?</span
+          ><button id="useSuggestionBtn">Izmantot</button>
+        </div>
+        <section id="resultCard" class="result neutral">
+          <div id="resultIcon">ⓘ</div>
+          <div id="resultTitle">Gatavs darbam</div>
+          <div id="resultPlate"></div>
+          <div id="resultDetails">Nolasiet vai ievadiet auto numuru.</div>
+        </section>
+      </section>
+    </main>
+    <dialog id="adminDialog">
+      <button id="closeAdminBtn" class="round close">✕</button>
+      <h2>Pasākuma pārskats</h2>
+      <div class="admin-stats">
+        <div><b id="adminTotal">–</b>Sarakstā</div>
+        <div><b id="adminReady">–</b>Gatavi</div>
+        <div><b id="adminIn">–</b>Teritorijā</div>
+        <div><b id="adminOut">–</b>Izbraukuši</div>
+        <div><b id="adminBlocked">–</b>Bloķēti</div>
+        <div><b id="adminExpired">–</b>Beidzies</div>
+      </div>
+      <button id="refreshAdminBtn">Atjaunot</button>
+      <div id="recentLogs"></div>
+    </dialog>
+    <script src="api.js?v=210"></script>
+    <script src="camera.js?v=210"></script>
+    <script src="app.js?v=210"></script>
+  </body>
+</html>
