@@ -2,61 +2,149 @@
 <html lang="lv">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="theme-color" content="#111111">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#111827">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Parking Gate</title>
-  <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="style.css">
-</head>
 
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="style.css?v=200">
+
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+</head>
 <body>
   <main class="app">
-    <header class="header">
-      <div>
-        <h1>Parking Gate</h1>
-        <p>Pasākuma iebraukšanas kontrole</p>
+    <section id="setupScreen" class="screen">
+      <div class="brand">
+        <div class="brand-icon">P</div>
+        <div>
+          <h1>Parking Gate</h1>
+          <p>Ierīces pieslēgšana pasākumam</p>
+        </div>
       </div>
-      <button id="refreshStatsBtn" class="icon-btn">↻</button>
-    </header>
 
-    <section class="stats">
-      <div>
-        <span id="totalCount">–</span>
-        <small>Sarakstā</small>
+      <div class="card">
+        <label for="eventNameInput">Pasākuma nosaukums</label>
+        <input id="eventNameInput" autocomplete="organization" placeholder="Piemēram, Summer Festival 2026">
+
+        <label for="apiUrlInput">Apps Script Web App URL</label>
+        <input id="apiUrlInput" type="url" inputmode="url" autocomplete="url"
+               placeholder="https://script.google.com/macros/s/.../exec">
+
+        <label for="eventKeyInput">Pasākuma atslēga <span class="optional">(neobligāti)</span></label>
+        <input id="eventKeyInput" type="password" autocomplete="off" placeholder="Tikai, ja iestatīta Apps Script">
+
+        <label for="gateInput">Gate / iebrauktuve</label>
+        <input id="gateInput" autocomplete="off" placeholder="Piemēram, VIP Gate">
+
+        <label for="guardInput">Apsargs</label>
+        <input id="guardInput" autocomplete="name" placeholder="Vārds vai darbinieka ID">
+
+        <button id="saveSetupBtn" class="primary">Pārbaudīt un sākt darbu</button>
+        <p id="setupMessage" class="message"></p>
       </div>
-      <div>
-        <span id="enteredCount">–</span>
-        <small>Iebraukuši</small>
-      </div>
-      <div>
-        <span id="remainingCount">–</span>
-        <small>Atlikuši</small>
-      </div>
+
+      <p class="help">
+        Ja saiti atvēri no pasākuma QR koda, API adrese un pasākuma nosaukums var būt aizpildīti automātiski.
+      </p>
     </section>
 
-    <section class="camera-card">
-      <video id="cameraPreview" autoplay playsinline muted></video>
-      <div class="camera-actions">
-        <button id="startCameraBtn">📷 Sākt kameru</button>
-        <button id="stopCameraBtn" class="secondary">Apturēt</button>
+    <section id="workScreen" class="screen hidden">
+      <header class="topbar">
+        <div>
+          <h1 id="eventTitle">Parking Gate</h1>
+          <p><span id="gateLabel"></span> · <span id="guardLabel"></span></p>
+        </div>
+        <button id="settingsBtn" class="icon-button" aria-label="Iestatījumi">⚙</button>
+      </header>
+
+      <section class="mode-switch" aria-label="Darbības režīms">
+        <button id="entryModeBtn" class="mode active" data-mode="entry">IEBRAUKŠANA</button>
+        <button id="exitModeBtn" class="mode" data-mode="exit">IZBRAUKŠANA</button>
+      </section>
+
+      <section class="stats-row">
+        <button class="stat" id="statTotalBtn">
+          <strong id="totalCount">–</strong><span>Sarakstā</span>
+        </button>
+        <button class="stat">
+          <strong id="inCount">–</strong><span>Teritorijā</span>
+        </button>
+        <button class="stat">
+          <strong id="outCount">–</strong><span>Izbraukuši</span>
+        </button>
+      </section>
+
+      <section class="camera-card card">
+        <div class="camera-wrap">
+          <video id="cameraPreview" autoplay playsinline muted></video>
+          <div class="plate-guide" aria-hidden="true"></div>
+          <canvas id="captureCanvas"></canvas>
+        </div>
+
+        <div class="button-grid">
+          <button id="startCameraBtn">📷 Sākt kameru</button>
+          <button id="scanPlateBtn" class="accent" disabled>Nolasīt numuru</button>
+        </div>
+        <p id="cameraStatus" class="message">Kamera nav ieslēgta.</p>
+      </section>
+
+      <section class="card">
+        <label for="plateInput">Auto numurs</label>
+        <input id="plateInput" class="plate-input" inputmode="latin" autocomplete="off"
+               autocapitalize="characters" placeholder="AB1234" maxlength="12">
+
+        <p id="ocrHint" class="message">
+          Pēc nolasīšanas pārbaudi numuru un vajadzības gadījumā izlabo manuāli.
+        </p>
+
+        <button id="processBtn" class="primary large">PĀRBAUDĪT / IELAIST</button>
+        <button id="clearBtn" class="secondary">Notīrīt</button>
+      </section>
+
+      <section id="resultCard" class="result neutral">
+        <div id="resultIcon">ⓘ</div>
+        <div id="resultTitle">Gatavs darbam</div>
+        <div id="resultPlate"></div>
+        <div id="resultDetails">Nolasiet vai ievadiet auto numuru.</div>
+      </section>
+
+      <div class="footer-actions">
+        <button id="adminBtn" class="secondary">Statistika un pēdējie notikumi</button>
       </div>
-      <p id="cameraStatus">Kamera nav ieslēgta. Šajā versijā kamera ir sagatavota nākamajam OCR solim.</p>
-    </section>
-
-    <section class="plate-card">
-      <label for="plateInput">Auto numurs</label>
-      <input id="plateInput" type="text" inputmode="latin" autocomplete="off" placeholder="Piemēram, AB1234">
-      <button id="checkBtn" class="primary">Pārbaudīt / Ielaist</button>
-      <button id="clearBtn" class="secondary">Notīrīt</button>
-    </section>
-
-    <section id="result" class="result neutral">
-      Ievadi auto numuru un spied “Pārbaudīt / Ielaist”.
     </section>
   </main>
 
-<script src="api.js?v=10"></script>
-<script src="camera.js?v=10"></script>
-<script src="app.js?v=10"></script>
+  <dialog id="adminDialog">
+    <div class="dialog-head">
+      <div>
+        <h2>Pasākuma pārskats</h2>
+        <p id="adminEventName"></p>
+      </div>
+      <button id="closeAdminBtn" class="icon-button">✕</button>
+    </div>
+
+    <section class="admin-stats">
+      <div><strong id="adminTotal">–</strong><span>Sarakstā</span></div>
+      <div><strong id="adminReady">–</strong><span>Gatavi</span></div>
+      <div><strong id="adminIn">–</strong><span>Teritorijā</span></div>
+      <div><strong id="adminOut">–</strong><span>Izbraukuši</span></div>
+      <div><strong id="adminBlocked">–</strong><span>Bloķēti</span></div>
+      <div><strong id="adminExpired">–</strong><span>Termiņš beidzies</span></div>
+    </section>
+
+    <div class="dialog-actions">
+      <button id="refreshAdminBtn">Atjaunot</button>
+    </div>
+
+    <h3>Pēdējie notikumi</h3>
+    <div id="recentLogs" class="log-list"></div>
+  </dialog>
+
+  <script src="api.js?v=200"></script>
+  <script src="camera.js?v=200"></script>
+  <script src="app.js?v=200"></script>
 </body>
 </html>
