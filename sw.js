@@ -1,48 +1,42 @@
-const CACHE_NAME = "parking-gate-v2-200";
-const APP_FILES = [
+const CACHE = "parking-gate-v21";
+const FILES = [
   "./",
   "./index.html",
-  "./style.css?v=200",
-  "./api.js?v=200",
-  "./camera.js?v=200",
-  "./app.js?v=200",
+  "./style.css?v=210",
+  "./api.js?v=210",
+  "./camera.js?v=210",
+  "./app.js?v=210",
   "./manifest.json",
   "./icons/icon-192.png",
-  "./icons/icon-512.png"
+  "./icons/icon-512.png",
 ];
-
-self.addEventListener("install", event => {
+self.addEventListener("install", (e) => {
   self.skipWaiting();
-  event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(APP_FILES))
-  );
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)));
 });
-
-self.addEventListener("activate", event => {
-  event.waitUntil(
-    caches.keys()
-      .then(keys => Promise.all(
-        keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key))
-      ))
-      .then(() => self.clients.claim())
-  );
-});
-
-self.addEventListener("fetch", event => {
-  if (event.request.method !== "GET") return;
-
-  const requestUrl = new URL(event.request.url);
-
-  // Ārējiem resursiem, piemēram, Tesseract CDN, izmanto tīklu.
-  if (requestUrl.origin !== self.location.origin) return;
-
-  event.respondWith(
-    fetch(event.request)
-      .then(response => {
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
-        return response;
+self.addEventListener("activate", (e) =>
+  e.waitUntil(
+    caches
+      .keys()
+      .then((k) =>
+        Promise.all(k.filter((x) => x !== CACHE).map((x) => caches.delete(x))),
+      )
+      .then(() => self.clients.claim()),
+  ),
+);
+self.addEventListener("fetch", (e) => {
+  if (
+    e.request.method !== "GET" ||
+    new URL(e.request.url).origin !== location.origin
+  )
+    return;
+  e.respondWith(
+    fetch(e.request)
+      .then((r) => {
+        const x = r.clone();
+        caches.open(CACHE).then((c) => c.put(e.request, x));
+        return r;
       })
-      .catch(() => caches.match(event.request))
+      .catch(() => caches.match(e.request)),
   );
 });
