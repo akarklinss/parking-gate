@@ -1,405 +1,298 @@
-const STORAGE_KEY = "parkingGateConfigV2";
-
-const state = {
-  mode: "entry",
-  config: null,
-  lastSource: "MANUAL"
-};
-
-const $ = id => document.getElementById(id);
-
-window.addEventListener("DOMContentLoaded", init);
-
-async function init() {
-  bindEvents();
-  applyQueryConfiguration();
-
-  const saved = loadConfig();
-  if (saved) fillSetup(saved);
-
+const $ = (id) => document.getElementById(id),
+  KEY = "parkingGateConfigV21";
+let mode = "entry",
+  source = "MANUAL",
+  config = null;
+document.addEventListener("DOMContentLoaded", init);
+function init() {
+  bind();
+  network();
+  window.addEventListener("online", network);
+  window.addEventListener("offline", network);
+  const q = new URLSearchParams(location.search),
+    saved = JSON.parse(localStorage.getItem(KEY) || "null");
+  if (saved) fill(saved);
+  if (q.get("api")) $("apiUrlInput").value = q.get("api");
+  if (q.get("event")) $("eventNameInput").value = q.get("event");
+  if (q.get("key")) $("eventKeyInput").value = q.get("key");
   if (saved && saved.apiUrl && saved.gate && saved.guard) {
-    state.config = saved;
+    config = saved;
     ApiClient.configure(saved);
-    showWorkScreen();
-    await refreshStats();
-  } else {
-    showSetupScreen();
-  }
-
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("sw.js?v=200").catch(() => {});
-  }
+    showWork();
+    stats();
+  } else showSetup();
+  if (localStorage.getItem("pgDark") === "1")
+    document.body.classList.add("dark");
+  if ("serviceWorker" in navigator)
+    navigator.serviceWorker.register("sw.js?v=210").catch(() => {});
 }
-
-function bindEvents() {
-  $("saveSetupBtn").addEventListener("click", saveSetup);
-  $("settingsBtn").addEventListener("click", showSetupScreen);
-
-  $("entryModeBtn").addEventListener("click", () => setMode("entry"));
-  $("exitModeBtn").addEventListener("click", () => setMode("exit"));
-
-  $("startCameraBtn").addEventListener("click", startCamera);
-  $("scanPlateBtn").addEventListener("click", scanPlate);
-
-  $("processBtn").addEventListener("click", processPlate);
-  $("clearBtn").addEventListener("click", clearWorkForm);
-  $("plateInput").addEventListener("input", normalizePlateInput);
-  $("plateInput").addEventListener("keydown", event => {
-    if (event.key === "Enter") processPlate();
-  });
-
-  $("adminBtn").addEventListener("click", openAdmin);
-  $("statTotalBtn").addEventListener("click", openAdmin);
-  $("closeAdminBtn").addEventListener("click", () => $("adminDialog").close());
-  $("refreshAdminBtn").addEventListener("click", loadAdmin);
+function bind() {
+  $("saveSetupBtn").onclick = save;
+  $("settingsBtn").onclick = showSetup;
+  $("themeBtn").onclick = () => {
+    document.body.classList.toggle("dark");
+    localStorage.setItem(
+      "pgDark",
+      document.body.classList.contains("dark") ? "1" : "0",
+    );
+  };
+  $("entryModeBtn").onclick = () => setMode("entry");
+  $("exitModeBtn").onclick = () => setMode("exit");
+  $("startCameraBtn").onclick = startCam;
+  $("scanPlateBtn").onclick = scan;
+  $("processBtn").onclick = process;
+  $("clearBtn").onclick = clear;
+  $("plateInput").oninput = () => {
+    const old = $("plateInput").value;
+    $("plateInput").value = norm(old);
+    if (old !== $("plateInput").value) source = "MANUAL";
+  };
+  $("adminBtn").onclick = openAdmin;
+  $("closeAdminBtn").onclick = () => $("adminDialog").close();
+  $("refreshAdminBtn").onclick = loadAdmin;
+  $("useSuggestionBtn").onclick = () => {
+    $("plateInput").value = $("suggestedPlate").textContent;
+    $("suggestionBox").classList.add("hidden");
+  };
 }
-
-function applyQueryConfiguration() {
-  const params = new URLSearchParams(location.search);
-  const api = params.get("api");
-  const event = params.get("event");
-  const key = params.get("key");
-
-  if (api) $("apiUrlInput").value = api;
-  if (event) $("eventNameInput").value = event;
-  if (key) $("eventKeyInput").value = key;
-}
-
-function fillSetup(config) {
-  $("eventNameInput").value = config.eventName || "";
-  $("apiUrlInput").value = config.apiUrl || "";
-  $("eventKeyInput").value = config.eventKey || "";
-  $("gateInput").value = config.gate || "";
-  $("guardInput").value = config.guard || "";
-}
-
-function collectSetup() {
+function collect() {
   return {
     eventName: $("eventNameInput").value.trim() || "Parking Gate",
     apiUrl: $("apiUrlInput").value.trim(),
     eventKey: $("eventKeyInput").value.trim(),
     gate: $("gateInput").value.trim(),
-    guard: $("guardInput").value.trim()
+    guard: $("guardInput").value.trim(),
   };
 }
-
-async function saveSetup() {
-  const config = collectSetup();
-  const message = $("setupMessage");
-  message.className = "message";
-
-  if (!/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec(?:\?.*)?$/i.test(config.apiUrl)) {
-    message.textContent = "Ievadi derīgu Apps Script Web App /exec adresi.";
-    message.classList.add("error");
+function fill(c) {
+  $("eventNameInput").value = c.eventName || "";
+  $("apiUrlInput").value = c.apiUrl || "";
+  $("eventKeyInput").value = c.eventKey || "";
+  $("gateInput").value = c.gate || "";
+  $("guardInput").value = c.guard || "";
+}
+async function save() {
+  const c = collect();
+  if (!c.apiUrl.endsWith("/exec") || !c.gate || !c.guard) {
+    $("setupMessage").textContent = "Pārbaudi API URL, Gate un apsargu.";
     return;
   }
-  if (!config.gate || !config.guard) {
-    message.textContent = "Ievadi Gate un apsarga vārdu vai ID.";
-    message.classList.add("error");
-    return;
-  }
-
-  $("saveSetupBtn").disabled = true;
-  message.textContent = "Pārbauda savienojumu…";
-
+  ApiClient.configure(c);
+  $("setupMessage").textContent = "Pārbauda…";
   try {
-    ApiClient.configure(config);
-    const result = await ApiClient.ping();
-
-    if (!result.ok) throw new Error(result.error || "API neatbildēja pareizi.");
-
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
-    state.config = config;
-    message.textContent = "Savienojums darbojas.";
-    message.classList.add("success");
-    showWorkScreen();
-    await refreshStats();
-  } catch (error) {
-    message.textContent = error.message;
-    message.classList.add("error");
-  } finally {
-    $("saveSetupBtn").disabled = false;
+    const r = await ApiClient.ping();
+    if (!r.ok) throw Error(r.error);
+    localStorage.setItem(KEY, JSON.stringify(c));
+    config = c;
+    showWork();
+    stats();
+  } catch (e) {
+    $("setupMessage").textContent = e.message;
   }
 }
-
-function loadConfig() {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
-  } catch (_) {
-    return null;
-  }
-}
-
-function showSetupScreen() {
+function showSetup() {
   CameraController.stop();
   $("workScreen").classList.add("hidden");
   $("setupScreen").classList.remove("hidden");
-  if (state.config) fillSetup(state.config);
+  if (config) fill(config);
 }
-
-function showWorkScreen() {
+function showWork() {
   $("setupScreen").classList.add("hidden");
   $("workScreen").classList.remove("hidden");
-
-  const config = state.config || collectSetup();
-  $("eventTitle").textContent = config.eventName || "Parking Gate";
-  $("gateLabel").textContent = config.gate || "Gate";
-  $("guardLabel").textContent = config.guard || "Apsargs";
-  $("adminEventName").textContent = config.eventName || "Parking Gate";
-  updateProcessButton();
+  $("eventTitle").textContent = config.eventName;
+  $("gateLabel").textContent = config.gate;
+  $("guardLabel").textContent = config.guard;
 }
-
-function setMode(mode) {
-  state.mode = mode;
-
-  $("entryModeBtn").classList.toggle("active", mode === "entry");
-  $("exitModeBtn").classList.toggle("active", mode === "exit");
-  $("exitModeBtn").classList.toggle("exit", mode === "exit");
-
-  updateProcessButton();
-  showResult("neutral", "ⓘ",
-    mode === "entry" ? "Iebraukšanas režīms" : "Izbraukšanas režīms",
-    "", "Nolasiet vai ievadiet auto numuru.");
-}
-
-function updateProcessButton() {
+function setMode(m) {
+  mode = m;
+  $("entryModeBtn").classList.toggle("active", m === "entry");
+  $("exitModeBtn").classList.toggle("active", m === "exit");
   $("processBtn").textContent =
-    state.mode === "entry" ? "PĀRBAUDĪT / IELAIST" : "REĢISTRĒT IZBRAUKŠANU";
+    m === "entry" ? "PĀRBAUDĪT / IELAIST" : "REĢISTRĒT IZBRAUKŠANU";
+  result(
+    "neutral",
+    "ⓘ",
+    m === "entry" ? "Iebraukšana" : "Izbraukšana",
+    "",
+    "Nolasiet vai ievadiet numuru.",
+  );
 }
-
-async function startCamera() {
-  $("startCameraBtn").disabled = true;
-  $("cameraStatus").textContent = "Ieslēdz kameru…";
-
+async function startCam() {
   try {
+    $("cameraStatus").textContent = "Ieslēdz kameru…";
     await CameraController.start();
-    $("cameraStatus").textContent =
-      "Kamera gatava. Novieto numurzīmi baltajā rāmī.";
     $("scanPlateBtn").disabled = false;
-    $("startCameraBtn").textContent = "Restartēt kameru";
-  } catch (error) {
-    $("cameraStatus").textContent = "Kameras kļūda: " + error.message;
-    $("cameraStatus").classList.add("error");
-  } finally {
-    $("startCameraBtn").disabled = false;
+    $("cameraStatus").textContent = "Novieto numurzīmi baltajā rāmī.";
+  } catch (e) {
+    $("cameraStatus").textContent = "Kameras kļūda: " + e.message;
   }
 }
-
-async function scanPlate() {
-  if (!CameraController.isRunning()) {
-    $("cameraStatus").textContent = "Vispirms ieslēdz kameru.";
-    return;
-  }
-
+async function scan() {
   $("scanPlateBtn").disabled = true;
-  $("cameraStatus").textContent = "Sagatavo OCR…";
-
+  $("cameraStatus").textContent = "Meklē numurzīmi…";
   try {
-    const result = await CameraController.recognize(progress => {
-      $("cameraStatus").textContent = "Nolasa numuru… " + progress + "%";
-    });
-
-    if (!result.plate) {
+    const r = await CameraController.recognize(
+      (p) => ($("cameraStatus").textContent = "Nolasa… " + p + "%"),
+    );
+    if (!r.plate) {
       $("cameraStatus").textContent =
-        "Numuru neizdevās droši nolasīt. Piebrauc tuvāk vai ievadi manuāli.";
+        "Numuru neizdevās droši nolasīt. Pielāgo attālumu vai ievadi manuāli.";
       return;
     }
-
-    $("plateInput").value = normalizePlate(result.plate);
-    state.lastSource = "OCR";
+    $("plateInput").value = r.plate;
+    source = "OCR";
     $("cameraStatus").textContent =
-      "Nolasīts: " + result.plate + ". Pārbaudi un vajadzības gadījumā izlabo.";
-    $("plateInput").focus();
-  } catch (error) {
-    $("cameraStatus").textContent = "OCR kļūda: " + error.message;
+      "Nolasīts " + r.plate + ". Pārbaudi un izlabo, ja vajag.";
+  } catch (e) {
+    $("cameraStatus").textContent = e.message;
   } finally {
     $("scanPlateBtn").disabled = false;
   }
 }
-
-function normalizePlateInput() {
-  const before = $("plateInput").value;
-  const after = normalizePlate(before);
-  $("plateInput").value = after;
-  if (before !== after || state.lastSource !== "OCR") state.lastSource = "MANUAL";
-}
-
-function normalizePlate(value) {
-  return String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
-}
-
-async function processPlate() {
-  const plate = normalizePlate($("plateInput").value);
-  $("plateInput").value = plate;
-
-  if (!plate) {
-    showResult("warning", "!", "Nav ievadīts numurs", "", "Ievadi vai nolasi auto numuru.");
-    return;
-  }
-
-  $("processBtn").disabled = true;
-  showResult("info", "…", "Pārbauda", plate, "Sazinās ar Google Sheet…");
-
+async function process() {
+  const plate = norm($("plateInput").value);
+  if (!plate)
+    return result(
+      "warning",
+      "!",
+      "Nav numura",
+      "",
+      "Ievadi vai nolasi numuru.",
+    );
+  $("suggestionBox").classList.add("hidden");
+  result("info", "…", "Pārbauda", plate, "Sazinās ar Google Sheet…");
   try {
-    const data = await ApiClient.process(state.mode, plate, state.lastSource);
-
-    if (!data.ok) throw new Error(data.error || "Nezināma API kļūda.");
-
-    renderApiResult(data, plate);
-    playFeedback(data);
-    await refreshStats();
-  } catch (error) {
-    showResult("bad", "✕", "Savienojuma kļūda", plate, escapeHtml(error.message));
-    vibrate([180, 80, 180]);
-  } finally {
-    $("processBtn").disabled = false;
+    const d = await ApiClient.process(mode, plate, source);
+    if (!d.ok) throw Error(d.error);
+    render(d, plate);
+    if (d.suggestion && d.suggestion !== plate) {
+      $("suggestedPlate").textContent = d.suggestion;
+      $("suggestionBox").classList.remove("hidden");
+    }
+    feedback(d.result);
+    stats();
+  } catch (e) {
+    result("bad", "✕", "Savienojuma kļūda", plate, e.message);
   }
 }
-
-function renderApiResult(data, submittedPlate) {
-  const plate = data.plate || submittedPlate;
-  const person = [data.name, data.area].filter(Boolean).map(escapeHtml).join("<br>");
-  const notes = data.notes ? "<br><small>" + escapeHtml(data.notes) + "</small>" : "";
-
-  const views = {
-    ENTRY_ALLOWED: ["ok", "✓", "ATĻAUTS", person + notes],
-    ALREADY_IN: ["warning", "!", "JAU IEBRAUCIS",
-      person + "<br>Iebrauca: " + escapeHtml(data.entryTime || "")],
-    BLOCKED: ["bad", "✕", "BLOĶĒTS", person + notes],
-    TOO_EARLY: ["warning", "⏱", "VĒL NAV DERĪGS",
-      person + "<br>Derīgs no: " + escapeHtml(data.validFrom || "")],
-    EXPIRED: ["bad", "⌛", "TERMIŅŠ BEIDZIES",
-      person + "<br>Derīgs līdz: " + escapeHtml(data.validUntil || "")],
-    NOT_FOUND: ["bad", "✕", "NAV SARAKSTĀ", "Pārbaudi nolasīto numuru."],
-    EXIT_RECORDED: ["ok", "✓", "IZBRAUKŠANA REĢISTRĒTA",
-      person + "<br>Izbrauca: " + escapeHtml(data.exitTime || "")],
-    EXIT_AFTER_DEADLINE: ["warning", "!", "IZBRAUCA PĒC DEADLINE",
-      person + "<br>Izbrauca: " + escapeHtml(data.exitTime || "")],
-    NOT_IN: ["warning", "!", "NAV STATUSA IN", person],
-    EXIT_NOT_FOUND: ["bad", "✕", "NAV SARAKSTĀ", "Izbraukšanu nevar reģistrēt."]
-  };
-
-  const view = views[data.result] ||
-    ["bad", "✕", "NEZINĀMS REZULTĀTS", escapeHtml(data.message || data.result || "")];
-
-  showResult(view[0], view[1], view[2], plate, view[3]);
+function render(d, p) {
+  const detail = [d.name, d.area, d.notes].filter(Boolean).join("<br>");
+  const map = {
+      ENTRY_ALLOWED: ["ok", "✓", "ATĻAUTS", detail],
+      ALREADY_IN: [
+        "warning",
+        "!",
+        "JAU IEBRAUCIS",
+        detail + "<br>Iebrauca: " + (d.entryTime || ""),
+      ],
+      BLOCKED: ["bad", "✕", "BLOĶĒTS", detail],
+      TOO_EARLY: [
+        "warning",
+        "⏱",
+        "VĒL NAV DERĪGS",
+        detail + "<br>Derīgs no: " + (d.validFrom || ""),
+      ],
+      EXPIRED: [
+        "bad",
+        "⌛",
+        "TERMIŅŠ BEIDZIES",
+        detail + "<br>Derīgs līdz: " + (d.validUntil || ""),
+      ],
+      NOT_FOUND: ["bad", "✕", "NAV SARAKSTĀ", "Pārbaudi numuru."],
+      EXIT_RECORDED: ["ok", "✓", "IZBRAUKŠANA REĢISTRĒTA", detail],
+      EXIT_AFTER_DEADLINE: ["warning", "!", "IZBRAUCA PĒC DEADLINE", detail],
+      NOT_IN: ["warning", "!", "NAV STATUSA IN", detail],
+      EXIT_NOT_FOUND: [
+        "bad",
+        "✕",
+        "NAV SARAKSTĀ",
+        "Izbraukšanu nevar reģistrēt.",
+      ],
+    },
+    x = map[d.result] || ["bad", "✕", "KĻŪDA", d.result || ""];
+  result(x[0], x[1], x[2], d.plate || p, x[3]);
 }
-
-function showResult(type, icon, title, plate, details) {
-  const card = $("resultCard");
-  card.className = "result " + type;
+function result(type, icon, title, plate, details) {
+  $("resultCard").className = "result " + type;
   $("resultIcon").textContent = icon;
   $("resultTitle").textContent = title;
-  $("resultPlate").textContent = plate || "";
+  $("resultPlate").textContent = plate;
   $("resultDetails").innerHTML = details || "";
-  card.scrollIntoView({ behavior: "smooth", block: "center" });
+  $("resultCard").scrollIntoView({ behavior: "smooth", block: "center" });
 }
-
-async function refreshStats() {
+async function stats() {
   try {
-    const stats = await ApiClient.stats();
-    if (!stats.ok) return;
-    $("totalCount").textContent = stats.total;
-    $("inCount").textContent = stats.in;
-    $("outCount").textContent = stats.out;
-  } catch (_) {
-    $("totalCount").textContent = "–";
-    $("inCount").textContent = "–";
-    $("outCount").textContent = "–";
-  }
+    const s = await ApiClient.stats();
+    $("totalCount").textContent = s.total;
+    $("inCount").textContent = s.in;
+    $("outCount").textContent = s.out;
+  } catch (e) {}
 }
-
-function clearWorkForm() {
+function clear() {
   $("plateInput").value = "";
-  state.lastSource = "MANUAL";
-  showResult("neutral", "ⓘ", "Gatavs darbam", "", "Nolasiet vai ievadiet auto numuru.");
-  $("plateInput").focus();
+  source = "MANUAL";
+  $("suggestionBox").classList.add("hidden");
+  result("neutral", "ⓘ", "Gatavs darbam", "", "Nolasiet vai ievadiet numuru.");
 }
-
+function norm(v) {
+  return String(v || "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+}
+function network() {
+  const on = navigator.onLine;
+  $("networkBanner").textContent = on ? "ONLINE" : "NAV INTERNETA";
+  $("networkBanner").className = "network " + (on ? "online" : "offline");
+}
 async function openAdmin() {
   $("adminDialog").showModal();
-  await loadAdmin();
+  loadAdmin();
 }
-
 async function loadAdmin() {
-  $("recentLogs").innerHTML = "<div class='message'>Ielādē…</div>";
-
   try {
-    const [stats, recent] = await Promise.all([
-      ApiClient.stats(),
-      ApiClient.recent(20)
-    ]);
-
-    if (!stats.ok) throw new Error(stats.error || "Statistikas kļūda.");
-    if (!recent.ok) throw new Error(recent.error || "LOG kļūda.");
-
-    $("adminTotal").textContent = stats.total;
-    $("adminReady").textContent = stats.ready;
-    $("adminIn").textContent = stats.in;
-    $("adminOut").textContent = stats.out;
-    $("adminBlocked").textContent = stats.blocked;
-    $("adminExpired").textContent = stats.expiredNow;
-
-    if (!recent.logs.length) {
-      $("recentLogs").innerHTML = "<div class='message'>LOG vēl nav ierakstu.</div>";
-      return;
-    }
-
-    $("recentLogs").innerHTML = recent.logs.map(log => `
-      <article class="log-item">
-        <div class="log-top">
-          <span>${escapeHtml(log.plate || "—")} · ${escapeHtml(log.result)}</span>
-          <span>${escapeHtml(log.time)}</span>
-        </div>
-        <div class="log-meta">
-          ${escapeHtml(log.name || "")}
-          ${log.area ? " · " + escapeHtml(log.area) : ""}
-          <br>${escapeHtml(log.gate || "")}
-          ${log.guard ? " · " + escapeHtml(log.guard) : ""}
-          ${log.source ? " · " + escapeHtml(log.source) : ""}
-        </div>
-      </article>
-    `).join("");
-  } catch (error) {
-    $("recentLogs").innerHTML =
-      "<div class='message error'>" + escapeHtml(error.message) + "</div>";
+    const [s, l] = await Promise.all([ApiClient.stats(), ApiClient.recent(20)]);
+    ["Total", "Ready", "In", "Out", "Blocked"].forEach(
+      (k) => ($("admin" + k).textContent = s[k.toLowerCase()]),
+    );
+    $("adminExpired").textContent = s.expiredNow;
+    $("recentLogs").innerHTML = l.logs
+      .map(
+        (x) =>
+          '<div class="log-item"><b>' +
+          x.plate +
+          " · " +
+          x.result +
+          "</b>" +
+          x.time +
+          "<br>" +
+          x.gate +
+          " · " +
+          x.guard +
+          "</div>",
+      )
+      .join("");
+  } catch (e) {
+    $("recentLogs").textContent = e.message;
   }
 }
-
-function playFeedback(data) {
-  const positive = ["ENTRY_ALLOWED", "EXIT_RECORDED"].includes(data.result);
-  const warning = ["ALREADY_IN", "TOO_EARLY", "EXIT_AFTER_DEADLINE", "NOT_IN"].includes(data.result);
-
+function feedback(r) {
+  if (navigator.vibrate)
+    navigator.vibrate(
+      ["ENTRY_ALLOWED", "EXIT_RECORDED"].includes(r) ? 80 : [150, 70, 150],
+    );
   try {
-    const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    if (AudioCtx) {
-      const ctx = new AudioCtx();
-      const oscillator = ctx.createOscillator();
-      const gain = ctx.createGain();
-      oscillator.connect(gain);
-      gain.connect(ctx.destination);
-      oscillator.frequency.value = positive ? 880 : warning ? 520 : 240;
-      gain.gain.setValueAtTime(0.08, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
-      oscillator.start();
-      oscillator.stop(ctx.currentTime + 0.18);
-    }
-  } catch (_) {}
-
-  if (positive) vibrate(80);
-  else if (warning) vibrate([100, 70, 100]);
-  else vibrate([180, 80, 180]);
-}
-
-function vibrate(pattern) {
-  if (navigator.vibrate) navigator.vibrate(pattern);
-}
-
-function escapeHtml(value) {
-  return String(value || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
+    const A = window.AudioContext || window.webkitAudioContext,
+      c = new A(),
+      o = c.createOscillator(),
+      g = c.createGain();
+    o.connect(g);
+    g.connect(c.destination);
+    o.frequency.value = ["ENTRY_ALLOWED", "EXIT_RECORDED"].includes(r)
+      ? 880
+      : 260;
+    g.gain.setValueAtTime(0.07, c.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.18);
+    o.start();
+    o.stop(c.currentTime + 0.18);
+  } catch (e) {}
 }
