@@ -1,77 +1,60 @@
 const ApiClient = (() => {
-  let config = {
-    apiUrl: "",
-    eventKey: "",
-    gate: "",
-    guard: ""
-  };
-
-  function configure(nextConfig) {
-    config = { ...config, ...nextConfig };
+  let c = {};
+  function configure(n) {
+    c = { ...c, ...n };
   }
-
-  function jsonpRequest(params, timeoutMs = 18000) {
+  function req(params) {
     return new Promise((resolve, reject) => {
-      if (!config.apiUrl) {
-        reject(new Error("Nav norādīts Apps Script API URL."));
-        return;
-      }
-
-      let settled = false;
-      const callbackName =
-        "pgCallback_" + Date.now() + "_" + Math.floor(Math.random() * 1000000);
-      const script = document.createElement("script");
-
-      const fullParams = {
-        ...params,
-        key: config.eventKey || "",
-        gate: config.gate || "",
-        guard: config.guard || "",
-        callback: callbackName,
-        _: Date.now()
+      if (!c.apiUrl) return reject(new Error("Nav norādīts API URL."));
+      const cb = "pg_" + Date.now() + "_" + Math.floor(Math.random() * 1e6),
+        s = document.createElement("script");
+      let done = false;
+      const clean = () => {
+        delete window[cb];
+        s.remove();
       };
-
-      function cleanup() {
-        if (script.parentNode) script.remove();
-        try { delete window[callbackName]; } catch (_) { window[callbackName] = undefined; }
-      }
-
-      function finish(handler, value) {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        cleanup();
-        handler(value);
-      }
-
-      window[callbackName] = data => finish(resolve, data);
-
-      script.onerror = () =>
-        finish(reject, new Error("API skripts neielādējās. Pārbaudi Web App URL un piekļuvi."));
-
-      const query = Object.entries(fullParams)
-        .map(([key, value]) => encodeURIComponent(key) + "=" + encodeURIComponent(value))
-        .join("&");
-
-      script.src = config.apiUrl.replace(/\?+$/, "") + "?" + query;
-      document.head.appendChild(script);
-
-      const timer = setTimeout(() => {
-        finish(reject, new Error("API neatbildēja noteiktajā laikā."));
-      }, timeoutMs);
+      window[cb] = (d) => {
+        if (done) return;
+        done = true;
+        clearTimeout(t);
+        clean();
+        resolve(d);
+      };
+      s.onerror = () => {
+        if (done) return;
+        done = true;
+        clearTimeout(t);
+        clean();
+        reject(new Error("API skripts neielādējās."));
+      };
+      const q = new URLSearchParams({
+        ...params,
+        key: c.eventKey || "",
+        gate: c.gate || "",
+        guard: c.guard || "",
+        callback: cb,
+        _: Date.now(),
+      });
+      s.src = c.apiUrl + "?" + q;
+      document.head.appendChild(s);
+      const t = setTimeout(() => {
+        if (done) return;
+        done = true;
+        clean();
+        reject(new Error("API neatbildēja laikā."));
+      }, 18000);
     });
   }
-
   return {
     configure,
-    ping: () => jsonpRequest({ action: "ping" }),
-    stats: () => jsonpRequest({ action: "stats" }),
-    recent: limit => jsonpRequest({ action: "recent", limit: String(limit || 20) }),
+    ping: () => req({ action: "ping" }),
+    stats: () => req({ action: "stats" }),
+    recent: (n) => req({ action: "recent", limit: n || 20 }),
     process: (mode, plate, source) =>
-      jsonpRequest({
+      req({
         action: mode === "exit" ? "exit" : "entry",
         plate,
-        source: source || "MANUAL"
-      })
+        source: source || "MANUAL",
+      }),
   };
 })();
