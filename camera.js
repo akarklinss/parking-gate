@@ -1,332 +1,246 @@
 const CameraController = (() => {
-  let stream = null;
-  let worker = null;
-  let workerPromise = null;
-  let cvReadyPromise = null;
-
-  const video = () => document.getElementById("cameraPreview");
-  const captureCanvas = () => document.getElementById("captureCanvas");
-  const previewCanvas = () => document.getElementById("platePreviewCanvas");
-
+  let stream = null,
+    worker = null,
+    workerPromise = null;
+  const v = () => document.getElementById("cameraPreview"),
+    cap = () => document.getElementById("captureCanvas"),
+    preview = () => document.getElementById("platePreviewCanvas");
   async function start() {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      throw new Error("Šis pārlūks neatbalsta kameras piekļuvi.");
-    }
-
     stop();
-
     try {
       stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: { ideal: "environment" },
           width: { ideal: 1920 },
-          height: { ideal: 1080 }
+          height: { ideal: 1080 },
         },
-        audio: false
+        audio: false,
       });
-    } catch (_) {
-      stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    } catch (e) {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: false,
+      });
     }
-
-    video().srcObject = stream;
-    await video().play();
+    v().srcObject = stream;
+    await v().play();
   }
-
   function stop() {
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop());
-      stream = null;
-    }
-    if (video()) video().srcObject = null;
+    if (stream) stream.getTracks().forEach((t) => t.stop());
+    stream = null;
+    if (v()) v().srcObject = null;
   }
-
-  function isRunning() {
-    return Boolean(stream && video() && video().readyState >= 2);
+  function running() {
+    return !!(stream && v().readyState >= 2);
   }
-
-  async function waitForOpenCv(timeoutMs = 20000) {
-    if (cvReadyPromise) return cvReadyPromise;
-
-    cvReadyPromise = new Promise((resolve, reject) => {
-      const started = Date.now();
-
-      async function check() {
-        try {
-          if (window.cv) {
-            const resolvedCv = typeof window.cv.then === "function"
-              ? await window.cv
-              : window.cv;
-
-            if (resolvedCv && resolvedCv.Mat && resolvedCv.findContours) {
-              window.cv = resolvedCv;
-              resolve(resolvedCv);
-              return;
-            }
-          }
-        } catch (_) {}
-
-        if (Date.now() - started > timeoutMs) {
-          reject(new Error("OpenCV neielādējās. Pārbaudi interneta savienojumu."));
-          return;
-        }
-        setTimeout(check, 150);
+  async function cvReady() {
+    const start = Date.now();
+    while (Date.now() - start < 20000) {
+      let x = window.cv;
+      if (x && typeof x.then === "function") x = await x;
+      if (x && x.Mat && x.findContours) {
+        window.cv = x;
+        return x;
       }
-
-      window.addEventListener("opencv-ready", check, { once: true });
-      check();
-    });
-
-    try {
-      return await cvReadyPromise;
-    } catch (error) {
-      cvReadyPromise = null;
-      throw error;
+      await new Promise((r) => setTimeout(r, 150));
     }
+    throw new Error("OpenCV neielādējās.");
   }
-
-  async function getWorker(onProgress) {
+  async function getWorker(progress) {
     if (worker) return worker;
     if (workerPromise) return workerPromise;
-
     workerPromise = (async () => {
-      if (!window.Tesseract) {
-        throw new Error("Tesseract OCR bibliotēka nav ielādējusies.");
-      }
-
-      const created = await Tesseract.createWorker("eng", 1, {
-        logger: message => {
-          if (message.status === "recognizing text" && typeof onProgress === "function") {
-            onProgress(Math.round((message.progress || 0) * 100));
-          }
-        }
+      const w = await Tesseract.createWorker("eng", 1, {
+        logger: (m) => {
+          if (m.status === "recognizing text" && progress)
+            progress(Math.round((m.progress || 0) * 100));
+        },
       });
-
-      await created.setParameters({
+      await w.setParameters({
         tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
         tessedit_pageseg_mode: "7",
-        preserve_interword_spaces: "0"
       });
-
-      worker = created;
-      return worker;
+      worker = w;
+      return w;
     })();
-
     try {
       return await workerPromise;
     } finally {
       workerPromise = null;
     }
   }
-
-  function captureCurrentFrame() {
-    if (!isRunning()) throw new Error("Vispirms ieslēdz kameru.");
-
-    const source = video();
-    const target = captureCanvas();
-    const maxWidth = 1280;
-    const scale = Math.min(1, maxWidth / source.videoWidth);
-
-    target.width = Math.round(source.videoWidth * scale);
-    target.height = Math.round(source.videoHeight * scale);
-
-    const context = target.getContext("2d", { willReadFrequently: true });
-    context.drawImage(source, 0, 0, target.width, target.height);
-    return target;
+  function frame() {
+    if (!running()) throw new Error("Vispirms ieslēdz kameru.");
+    const s = v(),
+      c = cap(),
+      scale = Math.min(1, 1280 / s.videoWidth);
+    c.width = Math.round(s.videoWidth * scale);
+    c.height = Math.round(s.videoHeight * scale);
+    c.getContext("2d").drawImage(s, 0, 0, c.width, c.height);
+    return c;
   }
-
-  function detectPlateRegion(cv, sourceCanvas) {
-    const src = cv.imread(sourceCanvas);
-    const gray = new cv.Mat();
-    const blurred = new cv.Mat();
-    const edges = new cv.Mat();
-    const closed = new cv.Mat();
-    const contours = new cv.MatVector();
-    const hierarchy = new cv.Mat();
-    const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(5, 3));
-
-    let bestRect = null;
-    let bestScore = -1;
-
+  function detect(cv, canvas) {
+    const src = cv.imread(canvas),
+      gray = new cv.Mat(),
+      blur = new cv.Mat(),
+      edges = new cv.Mat(),
+      closed = new cv.Mat(),
+      contours = new cv.MatVector(),
+      hier = new cv.Mat(),
+      kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(5, 3));
+    let best = null,
+      bestScore = -1;
     try {
       cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-      cv.bilateralFilter(gray, blurred, 9, 75, 75, cv.BORDER_DEFAULT);
-      cv.Canny(blurred, edges, 60, 180);
-      cv.morphologyEx(edges, closed, cv.MORPH_CLOSE, kernel, new cv.Point(-1, -1), 2);
-      cv.findContours(closed, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
-
+      cv.bilateralFilter(gray, blur, 9, 75, 75, cv.BORDER_DEFAULT);
+      cv.Canny(blur, edges, 60, 180);
+      cv.morphologyEx(
+        edges,
+        closed,
+        cv.MORPH_CLOSE,
+        kernel,
+        new cv.Point(-1, -1),
+        2,
+      );
+      cv.findContours(
+        closed,
+        contours,
+        hier,
+        cv.RETR_LIST,
+        cv.CHAIN_APPROX_SIMPLE,
+      );
       const imageArea = src.cols * src.rows;
-
       for (let i = 0; i < contours.size(); i++) {
-        const contour = contours.get(i);
-        const area = Math.abs(cv.contourArea(contour));
-
-        if (area < imageArea * 0.0015 || area > imageArea * 0.22) {
-          contour.delete();
-          continue;
+        const ct = contours.get(i),
+          area = Math.abs(cv.contourArea(ct)),
+          r = cv.boundingRect(ct),
+          aspect = r.width / Math.max(1, r.height),
+          fill = area / Math.max(1, r.width * r.height);
+        if (
+          area > imageArea * 0.0015 &&
+          area < imageArea * 0.22 &&
+          r.width > 90 &&
+          r.height > 22 &&
+          aspect > 2 &&
+          aspect < 6.8 &&
+          fill > 0.16
+        ) {
+          const cx = r.x + r.width / 2,
+            cy = r.y + r.height / 2,
+            center =
+              1 -
+              Math.min(
+                0.8,
+                Math.abs(cx - src.cols / 2) / src.cols +
+                  Math.abs(cy - src.rows / 2) / src.rows,
+              ),
+            score = 4 / (1 + Math.abs(aspect - 4.5)) + fill * 2 + center * 3;
+          if (score > bestScore) {
+            bestScore = score;
+            best = r;
+          }
         }
-
-        const rect = cv.boundingRect(contour);
-        const aspect = rect.width / Math.max(1, rect.height);
-        const fillRatio = area / Math.max(1, rect.width * rect.height);
-
-        if (rect.width < 90 || rect.height < 22 || aspect < 2.0 || aspect > 6.8 || fillRatio < 0.18) {
-          contour.delete();
-          continue;
-        }
-
-        const centerX = rect.x + rect.width / 2;
-        const centerY = rect.y + rect.height / 2;
-        const distanceX = Math.abs(centerX - src.cols / 2) / src.cols;
-        const distanceY = Math.abs(centerY - src.rows / 2) / src.rows;
-        const centerScore = 1 - Math.min(0.75, distanceX + distanceY);
-        const aspectScore = 1 / (1 + Math.abs(aspect - 4.5));
-        const sizeScore = Math.min(1, area / (imageArea * 0.025));
-        const score = aspectScore * 4 + fillRatio * 2 + sizeScore * 2 + centerScore * 3;
-
-        if (score > bestScore) {
-          bestScore = score;
-          bestRect = rect;
-        }
-        contour.delete();
+        ct.delete();
       }
-
-      if (!bestRect) {
-        throw new Error("OpenCV neatrada numurzīmes formas taisnstūri baltajā rāmī.");
-      }
-
-      const paddingX = Math.round(bestRect.width * 0.08);
-      const paddingY = Math.round(bestRect.height * 0.22);
-      const x = Math.max(0, bestRect.x - paddingX);
-      const y = Math.max(0, bestRect.y - paddingY);
-      const width = Math.min(src.cols - x, bestRect.width + paddingX * 2);
-      const height = Math.min(src.rows - y, bestRect.height + paddingY * 2);
-
-      const roi = src.roi(new cv.Rect(x, y, width, height));
-      const enlarged = new cv.Mat();
-      const targetWidth = Math.max(700, Math.min(1400, width * 4));
-      const targetHeight = Math.round(targetWidth * height / width);
-
-      cv.resize(roi, enlarged, new cv.Size(targetWidth, targetHeight), 0, 0, cv.INTER_CUBIC);
+      if (!best) throw new Error("OpenCV neatrada numurzīmes taisnstūri.");
+      const px = Math.round(best.width * 0.08),
+        py = Math.round(best.height * 0.22),
+        x = Math.max(0, best.x - px),
+        y = Math.max(0, best.y - py),
+        w = Math.min(src.cols - x, best.width + px * 2),
+        h = Math.min(src.rows - y, best.height + py * 2),
+        roi = src.roi(new cv.Rect(x, y, w, h)),
+        out = new cv.Mat(),
+        tw = Math.max(700, Math.min(1400, w * 4));
+      cv.resize(
+        roi,
+        out,
+        new cv.Size(tw, Math.round((tw * h) / w)),
+        0,
+        0,
+        cv.INTER_CUBIC,
+      );
       roi.delete();
-      return enlarged;
+      return out;
     } finally {
-      src.delete();
-      gray.delete();
-      blurred.delete();
-      edges.delete();
-      closed.delete();
-      contours.delete();
-      hierarchy.delete();
-      kernel.delete();
+      [src, gray, blur, edges, closed, contours, hier, kernel].forEach((m) =>
+        m.delete(),
+      );
     }
   }
-
-  function createOcrCanvases(cv, detectedPlate) {
-    const colorCanvas = document.createElement("canvas");
-    cv.imshow(colorCanvas, detectedPlate);
-
-    const gray = new cv.Mat();
-    const normalized = new cv.Mat();
-    const thresholded = new cv.Mat();
-
+  function images(cv, mat) {
+    const color = document.createElement("canvas");
+    cv.imshow(color, mat);
+    const gray = new cv.Mat(),
+      eq = new cv.Mat(),
+      th = new cv.Mat();
     try {
-      cv.cvtColor(detectedPlate, gray, cv.COLOR_RGBA2GRAY);
-      cv.equalizeHist(gray, normalized);
+      cv.cvtColor(mat, gray, cv.COLOR_RGBA2GRAY);
+      cv.equalizeHist(gray, eq);
       cv.adaptiveThreshold(
-        normalized,
-        thresholded,
+        eq,
+        th,
         255,
         cv.ADAPTIVE_THRESH_GAUSSIAN_C,
         cv.THRESH_BINARY,
         31,
-        11
+        11,
       );
-
-      const thresholdCanvas = document.createElement("canvas");
-      cv.imshow(thresholdCanvas, thresholded);
-
-      const visiblePreview = previewCanvas();
-      visiblePreview.width = thresholdCanvas.width;
-      visiblePreview.height = thresholdCanvas.height;
-      visiblePreview.getContext("2d").drawImage(thresholdCanvas, 0, 0);
+      const binary = document.createElement("canvas");
+      cv.imshow(binary, th);
+      preview().width = binary.width;
+      preview().height = binary.height;
+      preview().getContext("2d").drawImage(binary, 0, 0);
       document.getElementById("platePreviewWrap").classList.remove("hidden");
-
-      return [thresholdCanvas, colorCanvas];
+      return [binary, color];
     } finally {
       gray.delete();
-      normalized.delete();
-      thresholded.delete();
+      eq.delete();
+      th.delete();
     }
   }
-
-  function normalizeCandidate(value) {
-    return String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  function candidates(text) {
+    const arr = String(text || "")
+        .toUpperCase()
+        .split(/\s+/)
+        .map((x) => x.replace(/[^A-Z0-9]/g, ""))
+        .filter((x) => x.length >= 4 && x.length <= 9),
+      j = String(text || "")
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, "");
+    if (j.length >= 4 && j.length <= 9) arr.push(j);
+    return [...new Set(arr)];
   }
-
-  function candidateScore(candidate, confidence) {
-    const value = normalizeCandidate(candidate);
-    if (value.length < 4 || value.length > 9) return -100;
-
-    let score = Number(confidence || 0) / 10;
-    if (/[A-Z]/.test(value) && /\d/.test(value)) score += 8;
-    if (/^[A-Z]{1,3}\d{1,4}$/.test(value)) score += 12;
-    if (/^[A-Z]{2}\d{4}$/.test(value)) score += 5;
-    if (/^[A-Z]{4,9}$/.test(value)) score -= 14;
-    if (/^\d{4,9}$/.test(value)) score -= 4;
-    score -= Math.abs(6 - value.length);
-    return score;
+  function score(x, conf) {
+    let s = (conf || 0) / 10;
+    if (/[A-Z]/.test(x) && /\d/.test(x)) s += 8;
+    if (/^[A-Z]{1,3}\d{1,4}$/.test(x)) s += 12;
+    if (/^[A-Z]{2}\d{4}$/.test(x)) s += 5;
+    if (/^[A-Z]{4,9}$/.test(x)) s -= 14;
+    s -= Math.abs(6 - x.length);
+    return s;
   }
-
-  function extractCandidates(text) {
-    const values = String(text || "")
-      .toUpperCase()
-      .split(/\s+/)
-      .map(normalizeCandidate)
-      .filter(value => value.length >= 4 && value.length <= 9);
-
-    const joined = normalizeCandidate(text);
-    if (joined.length >= 4 && joined.length <= 9) values.push(joined);
-    return [...new Set(values)];
-  }
-
-  async function recognize(onProgress) {
-    const cv = await waitForOpenCv();
-    const frame = captureCurrentFrame();
-    let plateMat = null;
-
+  async function recognize(progress) {
+    const cv = await cvReady(),
+      plate = detect(cv, frame());
     try {
-      plateMat = detectPlateRegion(cv, frame);
-      const ocrImages = createOcrCanvases(cv, plateMat);
-      const ocrWorker = await getWorker(onProgress);
-
-      let best = { plate: "", score: -Infinity, rawText: "", confidence: 0 };
-
-      for (const image of ocrImages) {
-        const result = await ocrWorker.recognize(image);
-        const candidates = extractCandidates(result.data.text);
-
-        for (const candidate of candidates) {
-          const score = candidateScore(candidate, result.data.confidence);
-          if (score > best.score) {
-            best = {
-              plate: candidate,
-              score,
-              rawText: result.data.text || "",
-              confidence: Number(result.data.confidence || 0)
-            };
-          }
+      const w = await getWorker(progress),
+        imgs = images(cv, plate);
+      let best = { plate: "", score: -999, confidence: 0 };
+      for (const img of imgs) {
+        const r = await w.recognize(img);
+        for (const x of candidates(r.data.text)) {
+          const sc = score(x, r.data.confidence);
+          if (sc > best.score)
+            best = { plate: x, score: sc, confidence: r.data.confidence };
         }
       }
-
-      if (!best.plate || !/[A-Z]/.test(best.plate) || !/\d/.test(best.plate)) {
-        return { plate: "", rawText: best.rawText, confidence: best.confidence, detected: true };
-      }
-
-      return { plate: best.plate, rawText: best.rawText, confidence: best.confidence, detected: true };
+      if (!best.plate || !/[A-Z]/.test(best.plate) || !/\d/.test(best.plate))
+        return { plate: "", detected: true };
+      return best;
     } finally {
-      if (plateMat) plateMat.delete();
+      plate.delete();
     }
   }
-
-  return { start, stop, isRunning, recognize, waitForOpenCv };
+  return { start, stop, isRunning: running, recognize };
 })();
