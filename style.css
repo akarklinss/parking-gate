@@ -85,7 +85,6 @@ p {
   border-radius: 18px;
   padding: 15px;
   margin-bottom: 13px;
-  box-shadow: 0 7px 20px #00000012;
 }
 label {
   display: block;
@@ -166,28 +165,43 @@ button:disabled {
   color: var(--muted);
 }
 .camera-wrap {
-  position: relative;
-  overflow: hidden;
-  background: #000;
-  border-radius: 15px;
-  min-height: 235px;
+    position: relative;
+    overflow: hidden;
+}
+
+.grid {
+    position: relative;
+    z-index: 10;
+}
+
+button {
+    position: relative;
+    z-index: 20;
 }
 .camera-wrap video {
   width: 100%;
   min-height: 235px;
   max-height: 430px;
   object-fit: cover;
+
+  pointer-events: none;
+  position: relative;
+  z-index: 1;
 }
 .plate-guide {
   position: absolute;
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
+
   width: 82%;
   height: 28%;
+
   border: 3px solid #fff;
   border-radius: 10px;
-  box-shadow: 0 0 0 999px #0003;
+
+  pointer-events: none;
+  z-index: 2;
 }
 .grid {
   grid-template-columns: 1fr 1fr;
