@@ -6,6 +6,7 @@ import {
 } from "../lib/plateMatcher";
 
 let workerPromise = null;
+let workerInstance = null;
 
 function nextPaint() {
   return new Promise((resolve) =>
@@ -13,10 +14,8 @@ function nextPaint() {
   );
 }
 
-async function getWorker(onProgress) {
-  if (workerPromise) return workerPromise;
-
-  workerPromise = createWorker("eng", 1, {
+async function createOcrWorker(onProgress) {
+  const worker = await createWorker("eng", 1, {
     logger(message) {
       if (
         message.status === "recognizing text" &&
@@ -25,17 +24,39 @@ async function getWorker(onProgress) {
         onProgress(Math.round((message.progress || 0) * 100));
       }
     }
-  }).then(async (worker) => {
-    await worker.setParameters({
-      tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
-      preserve_interword_spaces: "0",
-      tessedit_pageseg_mode: "7"
-    });
-
-    return worker;
   });
 
+  await worker.setParameters({
+    tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+    preserve_interword_spaces: "0",
+    tessedit_pageseg_mode: "7"
+  });
+
+  workerInstance = worker;
+  return worker;
+}
+
+async function getWorker(onProgress) {
+  if (!workerPromise) {
+    workerPromise = createOcrWorker(onProgress).catch((error) => {
+      workerPromise = null;
+      workerInstance = null;
+      throw error;
+    });
+  }
+
   return workerPromise;
+}
+
+async function resetWorker() {
+  try {
+    await workerInstance?.terminate();
+  } catch {
+    // Ignorē terminēšanas kļūdu.
+  }
+
+  workerInstance = null;
+  workerPromise = null;
 }
 
 export async function prepareOcr(onStatus) {
@@ -44,37 +65,13 @@ export async function prepareOcr(onStatus) {
   onStatus?.("OCR gatavs.");
 }
 
-async function waitForOpenCv(timeoutMs = 20000) {
-  const startedAt = Date.now();
-
-  while (Date.now() - startedAt < timeoutMs) {
-    if (window.cv) {
-      const cv = typeof window.cv.then === "function"
-        ? await window.cv
-        : window.cv;
-
-      if (cv?.Mat && cv?.Laplacian) {
-        window.cv = cv;
-        return cv;
-      }
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 150));
-  }
-
-  throw new Error("OpenCV neielādējās. Pārbaudi interneta savienojumu.");
-}
-
 function getCrop(video, guideElement) {
-  const videoRect = video.getBoundingClientRect();
-  const guideRect = guideElement.getBoundingClientRect();
-
   const sourceWidth = video.videoWidth;
   const sourceHeight = video.videoHeight;
 
-  // Video ir paslēpts, tāpēc izmanto kameras zonas izmērus.
   const cameraWrap = guideElement.parentElement;
   const wrapRect = cameraWrap.getBoundingClientRect();
+  const guideRect = guideElement.getBoundingClientRect();
 
   const coverScale = Math.max(
     wrapRect.width / sourceWidth,
@@ -98,16 +95,17 @@ function getCrop(video, guideElement) {
   const padX = width * 0.08;
   const padY = height * 0.18;
 
+  const x = Math.max(0, left - padX);
+  const y = Math.max(0, top - padY);
+
   return {
-    x: Math.max(0, Math.round(left - padX)),
-    y: Math.max(0, Math.round(top - padY)),
-    width: Math.min(
-      sourceWidth,
-      Math.round(width + padX * 2)
+    x: Math.round(x),
+    y: Math.round(y),
+    width: Math.round(
+      Math.min(sourceWidth - x, width + padX * 2)
     ),
-    height: Math.min(
-      sourceHeight,
-      Math.round(height + padY * 2)
+    height: Math.round(
+      Math.min(sourceHeight - y, height + padY * 2)
     )
   };
 }
@@ -116,10 +114,9 @@ function captureFrame(video, guideElement) {
   const crop = getCrop(video, guideElement);
   const canvas = document.createElement("canvas");
 
-  // 900 px ir pietiekami OCR, bet daudz vieglāk iPhone nekā 1280 px.
-  const outputWidth = 900;
+  const outputWidth = 760;
   const outputHeight = Math.max(
-    180,
+    170,
     Math.round(outputWidth * crop.height / crop.width)
   );
 
@@ -148,70 +145,72 @@ function captureFrame(video, guideElement) {
   return canvas;
 }
 
-function sharpnessScore(cv, canvas) {
-  const src = cv.imread(canvas);
-  const gray = new cv.Mat();
-  const laplacian = new cv.Mat();
-  const mean = new cv.Mat();
-  const stddev = new cv.Mat();
+function makeContrastVariant(sourceCanvas) {
+  const canvas = document.createElement("canvas");
+  canvas.width = sourceCanvas.width;
+  canvas.height = sourceCanvas.height;
 
-  try {
-    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-    cv.Laplacian(gray, laplacian, cv.CV_64F);
-    cv.meanStdDev(laplacian, mean, stddev);
+  const context = canvas.getContext("2d", {
+    willReadFrequently: true
+  });
 
-    return Math.pow(stddev.doubleAt(0, 0), 2);
-  } finally {
-    src.delete();
-    gray.delete();
-    laplacian.delete();
-    mean.delete();
-    stddev.delete();
+  context.drawImage(sourceCanvas, 0, 0);
+
+  const imageData = context.getImageData(
+    0,
+    0,
+    canvas.width,
+    canvas.height
+  );
+
+  const pixels = imageData.data;
+
+  for (let index = 0; index < pixels.length; index += 4) {
+    const gray =
+      0.299 * pixels[index] +
+      0.587 * pixels[index + 1] +
+      0.114 * pixels[index + 2];
+
+    const contrasted = Math.max(
+      0,
+      Math.min(255, (gray - 128) * 1.45 + 128)
+    );
+
+    pixels[index] = contrasted;
+    pixels[index + 1] = contrasted;
+    pixels[index + 2] = contrasted;
   }
+
+  context.putImageData(imageData, 0, 0);
+  return canvas;
 }
 
-function makeEqualizedVariant(cv, canvas) {
-  const src = cv.imread(canvas);
-  const gray = new cv.Mat();
-  const equalized = new cv.Mat();
+async function recognizeWithTimeout(worker, image, timeoutMs = 22000) {
+  let timer;
 
   try {
-    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-    cv.equalizeHist(gray, equalized);
-
-    const result = document.createElement("canvas");
-    cv.imshow(result, equalized);
-    return result;
+    return await Promise.race([
+      worker.recognize(image),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          reject(
+            new Error(
+              "OCR neatbildēja 22 sekundēs. Pamēģini vēlreiz vai ievadi manuāli."
+            )
+          );
+        }, timeoutMs);
+      })
+    ]);
   } finally {
-    src.delete();
-    gray.delete();
-    equalized.delete();
+    clearTimeout(timer);
   }
-}
-
-async function collectFrames(
-  video,
-  guideElement,
-  frameCount,
-  onStatus
-) {
-  const frames = [];
-
-  for (let index = 0; index < frameCount; index += 1) {
-    onStatus?.(`Uzņem kadru ${index + 1}/${frameCount}`);
-    await nextPaint();
-    frames.push(captureFrame(video, guideElement));
-    await new Promise((resolve) => setTimeout(resolve, 140));
-  }
-
-  return frames;
 }
 
 export async function scanPlate({
   video,
   guideElement,
   allowedVehicles,
-  frameCount = 3,
+  frameCount = 2,
   onStatus,
   onProgress
 }) {
@@ -219,47 +218,46 @@ export async function scanPlate({
     throw new Error("Kamera vēl nav gatava.");
   }
 
-  onStatus?.("Sagatavo attēlu…");
+  onStatus?.("Uzņem attēlu…");
   await nextPaint();
 
-  const cv = await waitForOpenCv();
+  const firstFrame = captureFrame(video, guideElement);
 
-  const frames = await collectFrames(
-    video,
-    guideElement,
-    frameCount,
-    onStatus
-  );
+  await new Promise((resolve) => setTimeout(resolve, 180));
 
-  onStatus?.("Izvēlas asāko kadru…");
+  const secondFrame =
+    frameCount > 1
+      ? captureFrame(video, guideElement)
+      : firstFrame;
+
+  onStatus?.("Sagatavo OCR…");
   await nextPaint();
-
-  const bestFrame = frames
-    .map((canvas) => ({
-      canvas,
-      sharpness: sharpnessScore(cv, canvas)
-    }))
-    .sort((a, b) => b.sharpness - a.sharpness)[0];
-
-  const variants = [
-    bestFrame.canvas,
-    makeEqualizedVariant(cv, bestFrame.canvas)
-  ];
 
   const worker = await getWorker(onProgress);
+
+  const images = [
+    firstFrame,
+    makeContrastVariant(secondFrame)
+  ];
+
   const readings = [];
 
-  for (let index = 0; index < variants.length; index += 1) {
-    onStatus?.(`OCR analīze ${index + 1}/${variants.length}`);
-    await nextPaint();
+  try {
+    for (let index = 0; index < images.length; index += 1) {
+      onStatus?.(`OCR analīze ${index + 1}/${images.length}`);
+      await nextPaint();
 
-    const result = await worker.recognize(variants[index]);
+      const result = await recognizeWithTimeout(worker, images[index]);
 
-    readings.push({
-      rawText: result.data.text || "",
-      confidence: Number(result.data.confidence || 0),
-      candidates: extractOcrCandidates(result.data.text)
-    });
+      readings.push({
+        rawText: result.data.text || "",
+        confidence: Number(result.data.confidence || 0),
+        candidates: extractOcrCandidates(result.data.text)
+      });
+    }
+  } catch (error) {
+    await resetWorker();
+    throw error;
   }
 
   const consensus = consensusCandidates(readings);
