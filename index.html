@@ -1,174 +1,23 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="lv">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#111827">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-
-  <title>Parking Gate</title>
-
-  <link rel="manifest" href="manifest.json">
-  <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="style.css?v=301">
-
-  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-</head>
-
-<body>
-  <main class="app">
-    <section id="setupScreen">
-      <header class="brand">
-        <div class="logo">P</div>
-        <div>
-          <h1>Parking Gate</h1>
-          <p>Pasākumu un ierīču konfigurācija</p>
-        </div>
-      </header>
-
-      <section class="card">
-        <label for="profileSelect">Saglabātais pasākums</label>
-        <div class="row">
-          <select id="profileSelect"></select>
-          <button id="newProfileBtn" class="secondary small">Jauns</button>
-        </div>
-
-        <label for="eventNameInput">Pasākuma nosaukums</label>
-        <input id="eventNameInput" placeholder="Summer Festival 2026">
-
-        <label for="apiUrlInput">Apps Script Web App URL</label>
-        <input id="apiUrlInput" type="url" inputmode="url"
-               placeholder="https://script.google.com/macros/s/.../exec">
-
-        <label for="eventKeyInput">Pasākuma atslēga <span>(neobligāti)</span></label>
-        <input id="eventKeyInput" type="password" autocomplete="off">
-
-        <label for="gateInput">Gate / iebrauktuve</label>
-        <input id="gateInput" placeholder="VIP Gate">
-
-        <label for="guardInput">Apsargs</label>
-        <input id="guardInput" placeholder="Jānis vai ID-12">
-
-        <label for="deviceInput">Ierīces nosaukums</label>
-        <input id="deviceInput" placeholder="iPhone Gate 1">
-
-        <button id="saveProfileBtn" class="primary">Saglabāt un sākt darbu</button>
-        <button id="deleteProfileBtn" class="danger">Dzēst šo profilu</button>
-
-        <p id="setupMessage" class="message"></p>
-      </section>
-    </section>
-
-    <section id="workScreen" class="hidden">
-      <header class="topbar">
-        <div>
-          <h1 id="eventTitle">Parking Gate</h1>
-          <p>
-            <span id="gateLabel"></span> ·
-            <span id="guardLabel"></span> ·
-            <span id="deviceLabel"></span>
-          </p>
-        </div>
-
-        <div class="top-actions">
-          <span id="onlineBadge" class="badge online">ONLINE</span>
-          <button id="settingsBtn" class="icon-btn">⚙</button>
-        </div>
-      </header>
-
-      <section class="mode-switch">
-        <button id="entryModeBtn" class="mode active">IEBRAUKŠANA</button>
-        <button id="exitModeBtn" class="mode">IZBRAUKŠANA</button>
-      </section>
-
-      <section class="stats">
-        <button id="openAdminBtn" class="stat">
-          <strong id="totalCount">–</strong>
-          <span>Sarakstā</span>
-        </button>
-        <div class="stat">
-          <strong id="inCount">–</strong>
-          <span>Teritorijā</span>
-        </div>
-        <div class="stat">
-          <strong id="outCount">–</strong>
-          <span>Izbraukuši</span>
-        </div>
-      </section>
-
-      <section class="card camera-card">
-        <div class="camera-wrap">
-          <video id="cameraPreview" autoplay playsinline muted></video>
-          <div class="plate-guide"></div>
-          <canvas id="captureCanvas"></canvas>
-        </div>
-
-        <div class="button-grid">
-          <button id="startCameraBtn">📷 Sākt kameru</button>
-          <button id="scanBtn" class="accent" disabled>Nolasīt numuru</button>
-        </div>
-
-        <p id="cameraStatus" class="message">Kamera nav ieslēgta.</p>
-      </section>
-
-      <section class="card">
-        <label for="plateInput">Auto numurs</label>
-        <input id="plateInput" class="plate-input" inputmode="latin"
-               autocapitalize="characters" autocomplete="off" maxlength="12"
-               placeholder="AB1234">
-
-        <div id="suggestionBox" class="suggestion hidden">
-          <span id="suggestionText"></span>
-          <button id="useSuggestionBtn" class="small">Izmantot</button>
-        </div>
-
-        <button id="processBtn" class="primary large">PĀRBAUDĪT / IELAIST</button>
-        <button id="clearBtn" class="secondary">Notīrīt</button>
-      </section>
-
-      <section id="resultCard" class="result neutral">
-        <div id="resultIcon">ⓘ</div>
-        <div id="resultTitle">Gatavs darbam</div>
-        <div id="resultPlate"></div>
-        <div id="resultDetails">Nolasi vai ievadi auto numuru.</div>
-      </section>
-    </section>
-  </main>
-
-  <dialog id="adminDialog">
-    <div class="dialog-head">
-      <div>
-        <h2>Pasākuma pārskats</h2>
-        <p id="adminEventTitle"></p>
-      </div>
-      <button id="closeAdminBtn" class="icon-btn">✕</button>
-    </div>
-
-    <section class="admin-stats">
-      <div><strong id="adminTotal">–</strong><span>Sarakstā</span></div>
-      <div><strong id="adminReady">–</strong><span>Gatavi</span></div>
-      <div><strong id="adminIn">–</strong><span>Teritorijā</span></div>
-      <div><strong id="adminOut">–</strong><span>Izbraukuši</span></div>
-      <div><strong id="adminBlocked">–</strong><span>Bloķēti</span></div>
-      <div><strong id="adminExpired">–</strong><span>Termiņš beidzies</span></div>
-    </section>
-
-    <section class="card qr-card">
-      <h3>QR kods jaunai ierīcei</h3>
-      <p>QR satur pasākuma API un atslēgu. Glabā to privāti.</p>
-      <canvas id="qrCanvas"></canvas>
-    </section>
-
-    <button id="refreshAdminBtn">Atjaunot</button>
-
-    <h3>Pēdējie notikumi</h3>
-    <div id="recentLogs" class="log-list"></div>
-  </dialog>
-
-  <script src="api.js?v=301"></script>
-  <script src="camera.js?v=301"></script>
-  <script src="app.js?v=301"></script>
-<!-- publish 301 --> </body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#111827" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>Parking Gate</title>
+    <script>
+      window.Module = {
+        onRuntimeInitialized() {
+          window.dispatchEvent(new Event("opencv-ready"));
+        }
+      };
+    </script>
+    <script async src="https://docs.opencv.org/4.x/opencv.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
 </html>
