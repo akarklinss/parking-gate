@@ -583,3 +583,219 @@ button:disabled {
   }
 }
 
+
+/* Parking Gate v2 — nakts režīms, pilnekrāna reakcija un QR pieslēgšanās */
+:root {
+  --pg-bg: #eef1f5;
+  --pg-card: #ffffff;
+  --pg-text: #111827;
+  --pg-muted: #667085;
+  --pg-border: #d0d5dd;
+  --pg-soft: #f2f4f7;
+  --pg-input: #ffffff;
+  --pg-shadow: 0 8px 24px rgba(16, 24, 40, 0.08);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --pg-bg: #090f1c;
+  --pg-card: #121b2c;
+  --pg-text: #f8fafc;
+  --pg-muted: #a9b4c7;
+  --pg-border: #334155;
+  --pg-soft: #1d293d;
+  --pg-input: #0e1728;
+  --pg-shadow: 0 10px 30px rgba(0, 0, 0, 0.32);
+}
+
+html,
+body,
+#root {
+  background: var(--pg-bg);
+  color: var(--pg-text);
+  transition: background-color 180ms ease, color 180ms ease;
+}
+
+.card,
+.result-card,
+.stat-card,
+.modal {
+  background: var(--pg-card);
+  color: var(--pg-text);
+  border-color: var(--pg-border);
+  box-shadow: var(--pg-shadow);
+}
+
+input {
+  background: var(--pg-input);
+  color: var(--pg-text);
+  border-color: var(--pg-border);
+}
+
+label,
+.mode-switch button,
+.brand p,
+.topbar p,
+.modal-header p,
+.message,
+.log-meta,
+.stat-card span,
+.admin-stats span,
+.setup-hint {
+  color: var(--pg-muted);
+}
+
+.admin-stats div,
+.log-item {
+  background: var(--pg-soft);
+  color: var(--pg-text);
+  border-color: var(--pg-border);
+}
+
+:root[data-theme="dark"] .mode-switch {
+  background: #263247;
+}
+
+:root[data-theme="dark"] .result-card.neutral {
+  background: #1d293d;
+  color: #d7e0ee;
+}
+
+:root[data-theme="dark"] .result-card.info {
+  background: #102a56;
+  color: #bfdbfe;
+}
+
+:root[data-theme="dark"] .result-card.ok {
+  background: #063c2d;
+  color: #b7f7d6;
+}
+
+:root[data-theme="dark"] .result-card.warning {
+  background: #4b2c09;
+  color: #fde68a;
+}
+
+:root[data-theme="dark"] .result-card.bad {
+  background: #4b1518;
+  color: #fecaca;
+}
+
+.setup-brand {
+  align-items: center;
+}
+
+.brand-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.theme-button {
+  flex: 0 0 auto;
+  font-size: 23px;
+}
+
+.qr-login-button {
+  width: 100%;
+  margin-bottom: 8px;
+  background: #175cd3;
+}
+
+.setup-hint {
+  margin: 0 0 18px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.screen-flash {
+  position: fixed;
+  z-index: 5000;
+  inset: 0;
+  pointer-events: none;
+  animation: pg-screen-flash 1.8s ease-out forwards;
+  mix-blend-mode: normal;
+}
+
+.screen-flash-success {
+  background: rgba(16, 185, 129, 0.72);
+  box-shadow: inset 0 0 120px rgba(16, 185, 129, 1);
+}
+
+.screen-flash-warning {
+  background: rgba(245, 158, 11, 0.72);
+  box-shadow: inset 0 0 120px rgba(245, 158, 11, 1);
+}
+
+.screen-flash-error {
+  background: rgba(239, 68, 68, 0.74);
+  box-shadow: inset 0 0 120px rgba(239, 68, 68, 1);
+}
+
+@keyframes pg-screen-flash {
+  0% { opacity: 0; }
+  12% { opacity: 1; }
+  68% { opacity: 0.92; }
+  100% { opacity: 0; }
+}
+
+.qr-login-backdrop {
+  z-index: 6000;
+}
+
+.qr-login-modal {
+  width: min(94vw, 560px);
+}
+
+.qr-scanner-wrap {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  margin-top: 14px;
+  border-radius: 16px;
+  background: #020617;
+  isolation: isolate;
+}
+
+.qr-source-video {
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+.qr-preview-canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+.qr-guide {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  top: 50%;
+  width: min(68%, 280px);
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  border: 4px solid #ffffff;
+  border-radius: 18px;
+  box-shadow: 0 0 0 999px rgba(2, 6, 23, 0.36);
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .screen-flash {
+    animation-duration: 0.8s;
+  }
+}

@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import QrLoginScanner from "./QrLoginScanner";
 
 const EMPTY_CONFIG = {
   eventName: "",
@@ -13,12 +14,15 @@ export default function SetupScreen({
   initialConfig,
   onSave,
   busy,
-  message
+  message,
+  theme,
+  onToggleTheme
 }) {
   const [form, setForm] = useState({
     ...EMPTY_CONFIG,
     ...initialConfig
   });
+  const [qrOpen, setQrOpen] = useState(false);
 
   useEffect(() => {
     setForm({
@@ -34,17 +38,49 @@ export default function SetupScreen({
     }));
   };
 
+  const handleQrDetected = useCallback((qrConfig) => {
+    setForm((current) => ({
+      ...current,
+      ...qrConfig
+    }));
+    setQrOpen(false);
+  }, []);
+
   return (
     <section className="screen setup-screen">
-      <header className="brand">
-        <div className="brand-logo">P</div>
-        <div>
-          <h1>Parking Gate</h1>
-          <p>Aktīvā pasākuma konfigurācija</p>
+      <header className="brand setup-brand">
+        <div className="brand-left">
+          <div className="brand-logo">P</div>
+          <div>
+            <h1>Parking Gate</h1>
+            <p>Aktīvā pasākuma konfigurācija</p>
+          </div>
         </div>
+
+        <button
+          type="button"
+          className="icon-button theme-button"
+          onClick={onToggleTheme}
+          aria-label="Mainīt dienas vai nakts režīmu"
+        >
+          {theme === "dark" ? "☀" : "☾"}
+        </button>
       </header>
 
       <div className="card">
+        <button
+          type="button"
+          className="qr-login-button"
+          onClick={() => setQrOpen(true)}
+        >
+          ▣ Pieslēgties ar QR kodu
+        </button>
+
+        <p className="setup-hint">
+          QR aizpildīs pasākuma nosaukumu, Apps Script URL un atslēgu.
+          Gate, apsargu un ierīci ievadi šajā telefonā.
+        </p>
+
         <label>Pasākuma nosaukums</label>
         <input
           value={form.eventName}
@@ -105,6 +141,12 @@ export default function SetupScreen({
           </p>
         ) : null}
       </div>
+
+      <QrLoginScanner
+        open={qrOpen}
+        onClose={() => setQrOpen(false)}
+        onDetected={handleQrDetected}
+      />
     </section>
   );
 }
