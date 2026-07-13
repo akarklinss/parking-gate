@@ -14,6 +14,7 @@ export default function CameraScanner({
   const [cameraReady, setCameraReady] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [status, setStatus] = useState("Kamera nav ieslēgta.");
+  const [rawCandidates, setRawCandidates] = useState([]);
   const [suggestions, setSuggestions] = useState([]);
 
   useEffect(() => {
@@ -101,6 +102,7 @@ export default function CameraScanner({
 
   async function startCamera() {
     setCameraReady(false);
+    setRawCandidates([]);
     setSuggestions([]);
     setStatus("Ieslēdz kameru…");
     stopCamera();
@@ -159,6 +161,7 @@ export default function CameraScanner({
     if (!cameraReady || scanning) return;
 
     setScanning(true);
+    setRawCandidates([]);
     setSuggestions([]);
     setStatus("Sagatavo nolasīšanu…");
 
@@ -173,23 +176,26 @@ export default function CameraScanner({
         video: videoRef.current,
         guideElement: guideRef.current,
         allowedVehicles,
-        frameCount: 3,
+        frameCount: 4,
         onStatus: setStatus,
         onProgress: (progress) =>
           setStatus(`OCR nolasīšana… ${progress}%`)
       });
 
-      setSuggestions(result.suggestions);
+      setRawCandidates(result.rawCandidates || []);
+      setSuggestions(result.suggestions || []);
 
-      if (result.best) {
-        const percent = Math.round(result.best.similarity * 100);
+      if (result.bestRaw) {
+        const listedMatch = result.best
+          ? ` Tuvākais saraksta variants: ${result.best.plate}.`
+          : " Numurs var nebūt PARKING sarakstā.";
 
         setStatus(
-          `Labākais kandidāts: ${result.best.plate} (${percent}%). Apstiprini zemāk.`
+          `OCR nolasīja: ${result.bestRaw}.${listedMatch} Apstiprini numuru zemāk.`
         );
       } else {
         setStatus(
-          "Drošs kandidāts netika atrasts. Pamēģini vēlreiz vai ievadi manuāli."
+          "OCR neizdevās nolasīt nevienu numuru. Pamēģini vēlreiz vai ievadi manuāli."
         );
       }
     } catch (error) {
@@ -247,15 +253,33 @@ export default function CameraScanner({
 
       <p className="message">{status}</p>
 
-      {suggestions.length ? (
+      {rawCandidates.length ? (
         <div className="candidate-list">
+          <p className="candidate-heading">OCR nolasītie numuri</p>
+          {rawCandidates.map((candidate, index) => (
+            <button
+              type="button"
+              key={`raw-${candidate}`}
+              className="candidate-button raw-candidate-button"
+              onClick={() => onSelectCandidate(candidate, "OCR_RAW")}
+            >
+              <strong>{candidate}</strong>
+              <span>{index === 0 ? "Labākais OCR variants" : "OCR variants"}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {suggestions.length ? (
+        <div className="candidate-list listed-candidate-list">
+          <p className="candidate-heading">Līdzīgākie numuri PARKING sarakstā</p>
           {suggestions.map((candidate) => (
             <button
               type="button"
-              key={candidate.plate}
+              key={`listed-${candidate.plate}`}
               className="candidate-button"
               onClick={() =>
-                onSelectCandidate(candidate.plate, "OCR_MATCH")
+                onSelectCandidate(candidate.plate, "OCR_LIST_MATCH")
               }
             >
               <strong>{candidate.plate}</strong>

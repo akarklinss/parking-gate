@@ -224,7 +224,7 @@ export async function scanPlate({
   video,
   guideElement,
   allowedVehicles,
-  frameCount = 3,
+  frameCount = 4,
   onStatus,
   onProgress
 }) {
@@ -274,12 +274,15 @@ export async function scanPlate({
   }
 
   const consensus = consensusCandidates(readings);
-  const suggestions = rankAgainstAllowed(consensus, allowedVehicles, 3);
+  const rawCandidates = consensus.slice(0, 3);
+  const suggestions = rankAgainstAllowed(rawCandidates, allowedVehicles, 3);
 
   return {
     readings,
     consensus,
+    rawCandidates,
     suggestions,
+    bestRaw: rawCandidates[0] || null,
     best: suggestions[0] || null
   };
 }

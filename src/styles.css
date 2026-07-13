@@ -799,3 +799,27 @@ label,
     animation-duration: 0.8s;
   }
 }
+
+
+/* v2.2 — OCR rezultāts nav atkarīgs no PARKING saraksta */
+.candidate-heading {
+  margin: 4px 2px 0;
+  color: var(--muted, #667085);
+  font-size: 13px;
+  font-weight: 800;
+  text-align: left;
+}
+
+.raw-candidate-button {
+  background: #dbeafe;
+  color: #175cd3;
+}
+
+[data-theme="dark"] .raw-candidate-button {
+  background: #172554;
+  color: #bfdbfe;
+}
+
+.listed-candidate-list {
+  margin-top: 14px;
+}

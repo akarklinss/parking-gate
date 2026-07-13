@@ -1,0 +1,23 @@
+PARKING GATE v2.2 — OCR NEATKARĪGS NO SARAKSTA
+
+Galvenā izmaiņa:
+OCR vienmēr parāda paša nolasītos numurus, arī tad, ja tie nav PARKING sarakstā.
+Saraksta salīdzinājums tiek rādīts atsevišķi kā papildinformācija.
+
+Publicēšana:
+1. Pārliecinies, ka GitHub Desktop branch ir main.
+2. Nokopē visu šīs mapes saturu lokālajā parking-gate mapē.
+3. Replace files in destination.
+4. Summary: Parking Gate v2.2 independent OCR
+5. Commit to main.
+6. Push origin.
+7. GitHub Actions izmanto gatavo dist mapi — npm netiek palaists.
+8. Sagaidi zaļu deploy un atver:
+   https://akarklinss.github.io/parking-gate/?v=22-ocr
+
+Lietošana:
+1. Skenē numuru.
+2. Nospied pareizo pogu sadaļā “OCR nolasītie numuri”.
+3. Numurs nonāk Auto numurs laukā.
+4. Spied PĀRBAUDĪT / IELAIST.
+5. Ja numurs nav sarakstā, sistēma parādīs NAV SARAKSTĀ un sarkanu pilnekrāna reakciju.
