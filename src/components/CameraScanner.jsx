@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { scanPlate } from "../services/ocrEngine";
+import { prepareOcr, scanPlate } from "../services/ocrEngine";
 
 export default function CameraScanner({
   allowedVehicles,
@@ -55,9 +55,11 @@ export default function CameraScanner({
     ) {
       const width = canvas.clientWidth || 640;
       const height = canvas.clientHeight || 480;
-      const ratio = Math.min(window.devicePixelRatio || 1, 2);
-      const targetWidth = Math.max(1, Math.round(width * ratio));
-      const targetHeight = Math.max(1, Math.round(height * ratio));
+
+      // Mobilajā ierīcē pietiek ar 1x priekšskatījumu.
+      // Tas būtiski samazina CPU slodzi.
+      const targetWidth = Math.max(1, Math.round(width));
+      const targetHeight = Math.max(1, Math.round(height));
 
       if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
         canvas.width = targetWidth;
@@ -110,8 +112,8 @@ export default function CameraScanner({
         stream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: { ideal: "environment" },
-            width: { ideal: 1920 },
-            height: { ideal: 1080 }
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
           },
           audio: false
         });
@@ -135,10 +137,18 @@ export default function CameraScanner({
 
       stopPreviewLoop();
       drawPreviewFrame();
-      await new Promise((resolve) => setTimeout(resolve, 300));
 
       setCameraReady(true);
-      setStatus("Kamera gatava. Numurzīmi ievieto baltajā rāmī.");
+      setStatus("Kamera gatava. Sagatavo OCR…");
+
+      // OCR modelis ielādējas fonā, nevis tikai pēc pogas nospiešanas.
+      prepareOcr((message) => setStatus(message))
+        .then(() => {
+          setStatus("Kamera un OCR gatavi. Numurzīmi ievieto baltajā rāmī.");
+        })
+        .catch(() => {
+          setStatus("Kamera gatava. OCR ielādēsies pie pirmās nolasīšanas.");
+        });
     } catch (error) {
       stopCamera();
       setStatus(`Kameras kļūda: ${error.message}`);
@@ -150,13 +160,20 @@ export default function CameraScanner({
 
     setScanning(true);
     setSuggestions([]);
+    setStatus("Sagatavo nolasīšanu…");
+
+    // Apstādina canvas priekšskatījumu, lai OCR laikā netērētu CPU.
+    stopPreviewLoop();
+
+    // Ļauj React vispirms uz ekrāna parādīt "Analizē…".
+    await new Promise((resolve) => setTimeout(resolve, 80));
 
     try {
       const result = await scanPlate({
         video: videoRef.current,
         guideElement: guideRef.current,
         allowedVehicles,
-        frameCount: 5,
+        frameCount: 3,
         onStatus: setStatus,
         onProgress: (progress) =>
           setStatus(`OCR nolasīšana… ${progress}%`)
@@ -179,6 +196,10 @@ export default function CameraScanner({
       setStatus(`OCR kļūda: ${error.message}`);
     } finally {
       setScanning(false);
+
+      if (streamRef.current) {
+        drawPreviewFrame();
+      }
     }
   }
 
@@ -197,11 +218,20 @@ export default function CameraScanner({
           ref={previewCanvasRef}
           className="camera-preview-canvas"
         />
+
         <div ref={guideRef} className="plate-guide" />
+
+        {scanning ? (
+          <div className="scan-overlay">
+            <div className="scan-spinner" />
+            <strong>Analizē numurzīmi…</strong>
+            <span>Neaizver aplikāciju</span>
+          </div>
+        ) : null}
       </div>
 
       <div className="camera-buttons">
-        <button type="button" onClick={startCamera}>
+        <button type="button" onClick={startCamera} disabled={scanning}>
           📷 {cameraReady ? "Restartēt kameru" : "Sākt kameru"}
         </button>
 

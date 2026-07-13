@@ -7,6 +7,12 @@ import {
 
 let workerPromise = null;
 
+function nextPaint() {
+  return new Promise((resolve) =>
+    requestAnimationFrame(() => setTimeout(resolve, 0))
+  );
+}
+
 async function getWorker(onProgress) {
   if (workerPromise) return workerPromise;
 
@@ -25,10 +31,17 @@ async function getWorker(onProgress) {
       preserve_interword_spaces: "0",
       tessedit_pageseg_mode: "7"
     });
+
     return worker;
   });
 
   return workerPromise;
+}
+
+export async function prepareOcr(onStatus) {
+  onStatus?.("Ielādē OCR modeli…");
+  await getWorker();
+  onStatus?.("OCR gatavs.");
 }
 
 async function waitForOpenCv(timeoutMs = 20000) {
@@ -59,18 +72,26 @@ function getCrop(video, guideElement) {
   const sourceWidth = video.videoWidth;
   const sourceHeight = video.videoHeight;
 
+  // Video ir paslēpts, tāpēc izmanto kameras zonas izmērus.
+  const cameraWrap = guideElement.parentElement;
+  const wrapRect = cameraWrap.getBoundingClientRect();
+
   const coverScale = Math.max(
-    videoRect.width / sourceWidth,
-    videoRect.height / sourceHeight
+    wrapRect.width / sourceWidth,
+    wrapRect.height / sourceHeight
   );
 
   const renderedWidth = sourceWidth * coverScale;
   const renderedHeight = sourceHeight * coverScale;
-  const hiddenLeft = Math.max(0, (renderedWidth - videoRect.width) / 2);
-  const hiddenTop = Math.max(0, (renderedHeight - videoRect.height) / 2);
+  const hiddenLeft = Math.max(0, (renderedWidth - wrapRect.width) / 2);
+  const hiddenTop = Math.max(0, (renderedHeight - wrapRect.height) / 2);
 
-  const left = (guideRect.left - videoRect.left + hiddenLeft) / coverScale;
-  const top = (guideRect.top - videoRect.top + hiddenTop) / coverScale;
+  const left =
+    (guideRect.left - wrapRect.left + hiddenLeft) / coverScale;
+
+  const top =
+    (guideRect.top - wrapRect.top + hiddenTop) / coverScale;
+
   const width = guideRect.width / coverScale;
   const height = guideRect.height / coverScale;
 
@@ -80,17 +101,25 @@ function getCrop(video, guideElement) {
   return {
     x: Math.max(0, Math.round(left - padX)),
     y: Math.max(0, Math.round(top - padY)),
-    width: Math.min(sourceWidth, Math.round(width + padX * 2)),
-    height: Math.min(sourceHeight, Math.round(height + padY * 2))
+    width: Math.min(
+      sourceWidth,
+      Math.round(width + padX * 2)
+    ),
+    height: Math.min(
+      sourceHeight,
+      Math.round(height + padY * 2)
+    )
   };
 }
 
 function captureFrame(video, guideElement) {
   const crop = getCrop(video, guideElement);
   const canvas = document.createElement("canvas");
-  const outputWidth = 1280;
+
+  // 900 px ir pietiekami OCR, bet daudz vieglāk iPhone nekā 1280 px.
+  const outputWidth = 900;
   const outputHeight = Math.max(
-    240,
+    180,
     Math.round(outputWidth * crop.height / crop.width)
   );
 
@@ -103,6 +132,7 @@ function captureFrame(video, guideElement) {
 
   context.imageSmoothingEnabled = true;
   context.imageSmoothingQuality = "high";
+
   context.drawImage(
     video,
     crop.x,
@@ -129,6 +159,7 @@ function sharpnessScore(cv, canvas) {
     cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
     cv.Laplacian(gray, laplacian, cv.CV_64F);
     cv.meanStdDev(laplacian, mean, stddev);
+
     return Math.pow(stddev.doubleAt(0, 0), 2);
   } finally {
     src.delete();
@@ -139,52 +170,38 @@ function sharpnessScore(cv, canvas) {
   }
 }
 
-function makeVariants(cv, canvas) {
+function makeEqualizedVariant(cv, canvas) {
   const src = cv.imread(canvas);
   const gray = new cv.Mat();
   const equalized = new cv.Mat();
-  const adaptive = new cv.Mat();
 
   try {
     cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
     cv.equalizeHist(gray, equalized);
-    cv.adaptiveThreshold(
-      equalized,
-      adaptive,
-      255,
-      cv.ADAPTIVE_THRESH_GAUSSIAN_C,
-      cv.THRESH_BINARY,
-      31,
-      9
-    );
 
-    const originalCanvas = document.createElement("canvas");
-    originalCanvas.width = canvas.width;
-    originalCanvas.height = canvas.height;
-    originalCanvas.getContext("2d").drawImage(canvas, 0, 0);
-
-    const equalizedCanvas = document.createElement("canvas");
-    cv.imshow(equalizedCanvas, equalized);
-
-    const adaptiveCanvas = document.createElement("canvas");
-    cv.imshow(adaptiveCanvas, adaptive);
-
-    return [originalCanvas, equalizedCanvas, adaptiveCanvas];
+    const result = document.createElement("canvas");
+    cv.imshow(result, equalized);
+    return result;
   } finally {
     src.delete();
     gray.delete();
     equalized.delete();
-    adaptive.delete();
   }
 }
 
-async function collectFrames(video, guideElement, frameCount, onStatus) {
+async function collectFrames(
+  video,
+  guideElement,
+  frameCount,
+  onStatus
+) {
   const frames = [];
 
   for (let index = 0; index < frameCount; index += 1) {
     onStatus?.(`Uzņem kadru ${index + 1}/${frameCount}`);
+    await nextPaint();
     frames.push(captureFrame(video, guideElement));
-    await new Promise((resolve) => setTimeout(resolve, 180));
+    await new Promise((resolve) => setTimeout(resolve, 140));
   }
 
   return frames;
@@ -194,7 +211,7 @@ export async function scanPlate({
   video,
   guideElement,
   allowedVehicles,
-  frameCount = 5,
+  frameCount = 3,
   onStatus,
   onProgress
 }) {
@@ -202,7 +219,11 @@ export async function scanPlate({
     throw new Error("Kamera vēl nav gatava.");
   }
 
+  onStatus?.("Sagatavo attēlu…");
+  await nextPaint();
+
   const cv = await waitForOpenCv();
+
   const frames = await collectFrames(
     video,
     guideElement,
@@ -210,36 +231,39 @@ export async function scanPlate({
     onStatus
   );
 
-  const bestFrames = frames
+  onStatus?.("Izvēlas asāko kadru…");
+  await nextPaint();
+
+  const bestFrame = frames
     .map((canvas) => ({
       canvas,
       sharpness: sharpnessScore(cv, canvas)
     }))
-    .sort((a, b) => b.sharpness - a.sharpness)
-    .slice(0, 2);
+    .sort((a, b) => b.sharpness - a.sharpness)[0];
+
+  const variants = [
+    bestFrame.canvas,
+    makeEqualizedVariant(cv, bestFrame.canvas)
+  ];
 
   const worker = await getWorker(onProgress);
   const readings = [];
-  const totalPasses = bestFrames.length * 3;
-  let pass = 0;
 
-  for (const frame of bestFrames) {
-    const variants = makeVariants(cv, frame.canvas);
+  for (let index = 0; index < variants.length; index += 1) {
+    onStatus?.(`OCR analīze ${index + 1}/${variants.length}`);
+    await nextPaint();
 
-    for (const variant of variants) {
-      pass += 1;
-      onStatus?.(`OCR analīze ${pass}/${totalPasses}`);
+    const result = await worker.recognize(variants[index]);
 
-      const result = await worker.recognize(variant);
-      readings.push({
-        rawText: result.data.text || "",
-        confidence: Number(result.data.confidence || 0),
-        candidates: extractOcrCandidates(result.data.text)
-      });
-    }
+    readings.push({
+      rawText: result.data.text || "",
+      confidence: Number(result.data.confidence || 0),
+      candidates: extractOcrCandidates(result.data.text)
+    });
   }
 
   const consensus = consensusCandidates(readings);
+
   const suggestions = rankAgainstAllowed(
     consensus,
     allowedVehicles,
