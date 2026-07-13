@@ -1,0 +1,53 @@
+PARKING GATE V2 — UZSTĀDĪŠANA
+
+Šajā versijā ir:
+- vizuālais nakts režīms;
+- pilnekrāna zaļa/dzeltena/sarkana reakcija;
+- 3 kadru OCR ar vieglu asuma atlasi;
+- QR konfigurācijas pieslēgšanās;
+- iepriekšējā IN/OUT, LOG, statistika un ierīču uzskaite.
+
+UZSTĀDĪŠANA
+
+1. GitHub Desktop atver repozitoriju parking-gate.
+2. Repository → Show in Explorer.
+3. Lejupielādēto ZIP izpako atsevišķā mapē.
+4. No ZIP izpakotās mapes nokopē VISU saturu uz lokālo parking-gate mapi.
+5. Ja Windows jautā, izvēlies Replace the files in the destination.
+6. Mapi .git neaiztiec un nedzēs. ZIP failā tās nav.
+7. GitHub Desktop sadaļā Changes jāparādās izmaiņām.
+8. Summary ieraksti: Parking Gate v2 night OCR QR
+9. Spied Commit to main.
+10. Spied Push origin.
+11. GitHub pārlūkā Actions sadaļā sagaidi zaļu ķeksi.
+12. Pilnībā aizver veco Safari/Chrome cilni.
+13. Atver https://akarklinss.github.io/parking-gate/?v=2
+
+GOOGLE APPS SCRIPT
+
+Code.gs loģika šajā atjauninājumā nav mainīta. Ja pašreizējā sistēma strādā,
+Apps Script nav jāpārpublicē.
+
+QR PIESLĒGŠANĀS
+
+1. Jau konfigurētā ierīcē atver “Statistika, ierīces un darbību vēsture”.
+2. Admin panelī parādās QR kods jaunai ierīcei.
+3. Jaunajā telefonā atver Parking Gate.
+4. Spied “Pieslēgties ar QR kodu”.
+5. Noskenē Admin paneļa QR.
+6. Ievadi Gate, apsargu un ierīces nosaukumu.
+7. Spied “Saglabāt un sākt darbu”.
+
+NAKTS REŽĪMS
+
+- Spied mēness vai saules pogu aplikācijas augšā.
+- Izvēle tiek saglabāta konkrētajā ierīcē.
+
+OCR
+
+- Kamera pieprasa aptuveni 1280×720.
+- Vienā nolasīšanā uzņem 3 kadrus.
+- Ar vieglu JavaScript asuma aprēķinu izvēlas labākos kadrus.
+- Tesseract apstrādā 2 attēlus: asāko oriģinālu un kontrasta variantu.
+- Rezultāti tiek salīdzināti ar PARKING sarakstu lokāli.
+- Automātiska ielaišana nenotiek; apsargs izvēlas kandidātu un apstiprina.

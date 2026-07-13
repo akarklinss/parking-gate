@@ -13,7 +13,8 @@
     "qrcode.react": "^4.2.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "tesseract.js": "^6.0.1"
+    "tesseract.js": "^6.0.1",
+    "jsqr": "^1.4.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.6.0",

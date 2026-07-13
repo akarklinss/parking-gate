@@ -9,7 +9,8 @@ import { ParkingApiClient } from "./services/apiClient";
 import { normalizePlate } from "./lib/plateMatcher";
 import { usePolling } from "./hooks/usePolling";
 
-const CONFIG_KEY = "parkingGateActiveConfigV4";
+const CONFIG_KEY = "parkingGateActiveConfigV5";
+const THEME_KEY = "parkingGateTheme";
 
 function readQueryConfig() {
   const params = new URLSearchParams(window.location.search);
@@ -54,11 +55,43 @@ export default function App() {
   const [adminLoading, setAdminLoading] = useState(false);
   const [online, setOnline] = useState(navigator.onLine);
   const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [theme, setTheme] = useState(() => {
+    const saved = localStorage.getItem(THEME_KEY);
+    if (saved === "dark" || saved === "light") return saved;
+    return window.matchMedia?.("(prefers-color-scheme: dark)").matches
+      ? "dark"
+      : "light";
+  });
+  const [screenFlash, setScreenFlash] = useState("");
 
   const api = useMemo(
     () => (config ? new ParkingApiClient(config) : null),
     [config]
   );
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem(THEME_KEY, theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme((current) => (current === "dark" ? "light" : "dark"));
+  };
+
+  const triggerScreenFlash = (resultCode) => {
+    const positive = ["ENTRY_ALLOWED", "EXIT_RECORDED"].includes(resultCode);
+    const warning = [
+      "ALREADY_IN",
+      "TOO_EARLY",
+      "EXIT_AFTER_DEADLINE",
+      "NOT_IN"
+    ].includes(resultCode);
+
+    const next = positive ? "success" : warning ? "warning" : "error";
+    setScreenFlash("");
+    window.setTimeout(() => setScreenFlash(next), 20);
+    window.setTimeout(() => setScreenFlash(""), 1800);
+  };
 
   useEffect(() => {
     const onlineHandler = () => setOnline(true);
@@ -181,6 +214,7 @@ export default function App() {
     try {
       const data = await api.process(mode, normalized, source);
       setResult(data);
+      triggerScreenFlash(data.result);
       refreshStats();
 
       if (navigator.vibrate) {
@@ -233,6 +267,8 @@ export default function App() {
           onSave={saveConfig}
           busy={setupBusy}
           message={setupMessage}
+          theme={theme}
+          onToggleTheme={toggleTheme}
         />
       </main>
     );
@@ -250,6 +286,13 @@ export default function App() {
 
         <div className="topbar-actions">
           <ConnectionBadge online={online} />
+          <button
+            className="icon-button theme-button"
+            onClick={toggleTheme}
+            aria-label="Mainīt dienas vai nakts režīmu"
+          >
+            {theme === "dark" ? "☀" : "☾"}
+          </button>
           <button
             className="icon-button"
             onClick={() => setSetupOpen(true)}
@@ -335,6 +378,13 @@ export default function App() {
       <button className="secondary full-width" onClick={openAdmin}>
         Statistika, ierīces un darbību vēsture
       </button>
+
+      {screenFlash ? (
+        <div
+          className={`screen-flash screen-flash-${screenFlash}`}
+          aria-hidden="true"
+        />
+      ) : null}
 
       <AdminPanel
         open={adminOpen}

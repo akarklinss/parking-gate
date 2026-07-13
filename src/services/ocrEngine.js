@@ -68,7 +68,6 @@ export async function prepareOcr(onStatus) {
 function getCrop(video, guideElement) {
   const sourceWidth = video.videoWidth;
   const sourceHeight = video.videoHeight;
-
   const cameraWrap = guideElement.parentElement;
   const wrapRect = cameraWrap.getBoundingClientRect();
   const guideRect = guideElement.getBoundingClientRect();
@@ -85,38 +84,30 @@ function getCrop(video, guideElement) {
 
   const left =
     (guideRect.left - wrapRect.left + hiddenLeft) / coverScale;
-
   const top =
     (guideRect.top - wrapRect.top + hiddenTop) / coverScale;
-
   const width = guideRect.width / coverScale;
   const height = guideRect.height / coverScale;
 
-  const padX = width * 0.08;
-  const padY = height * 0.18;
-
+  const padX = width * 0.09;
+  const padY = height * 0.2;
   const x = Math.max(0, left - padX);
   const y = Math.max(0, top - padY);
 
   return {
     x: Math.round(x),
     y: Math.round(y),
-    width: Math.round(
-      Math.min(sourceWidth - x, width + padX * 2)
-    ),
-    height: Math.round(
-      Math.min(sourceHeight - y, height + padY * 2)
-    )
+    width: Math.round(Math.min(sourceWidth - x, width + padX * 2)),
+    height: Math.round(Math.min(sourceHeight - y, height + padY * 2))
   };
 }
 
 function captureFrame(video, guideElement) {
   const crop = getCrop(video, guideElement);
   const canvas = document.createElement("canvas");
-
-  const outputWidth = 760;
+  const outputWidth = 860;
   const outputHeight = Math.max(
-    170,
+    180,
     Math.round(outputWidth * crop.height / crop.width)
   );
 
@@ -129,7 +120,6 @@ function captureFrame(video, guideElement) {
 
   context.imageSmoothingEnabled = true;
   context.imageSmoothingQuality = "high";
-
   context.drawImage(
     video,
     crop.x,
@@ -145,24 +135,49 @@ function captureFrame(video, guideElement) {
   return canvas;
 }
 
+function estimateSharpness(sourceCanvas) {
+  const sampleWidth = 160;
+  const sampleHeight = Math.max(
+    40,
+    Math.round(sampleWidth * sourceCanvas.height / sourceCanvas.width)
+  );
+  const sample = document.createElement("canvas");
+  sample.width = sampleWidth;
+  sample.height = sampleHeight;
+  const context = sample.getContext("2d", { willReadFrequently: true });
+  context.drawImage(sourceCanvas, 0, 0, sampleWidth, sampleHeight);
+  const pixels = context.getImageData(0, 0, sampleWidth, sampleHeight).data;
+  let score = 0;
+  let count = 0;
+
+  const grayAt = (x, y) => {
+    const index = (y * sampleWidth + x) * 4;
+    return (
+      0.299 * pixels[index] +
+      0.587 * pixels[index + 1] +
+      0.114 * pixels[index + 2]
+    );
+  };
+
+  for (let y = 1; y < sampleHeight - 1; y += 2) {
+    for (let x = 1; x < sampleWidth - 1; x += 2) {
+      const horizontal = Math.abs(grayAt(x + 1, y) - grayAt(x - 1, y));
+      const vertical = Math.abs(grayAt(x, y + 1) - grayAt(x, y - 1));
+      score += horizontal + vertical;
+      count += 1;
+    }
+  }
+
+  return count ? score / count : 0;
+}
+
 function makeContrastVariant(sourceCanvas) {
   const canvas = document.createElement("canvas");
   canvas.width = sourceCanvas.width;
   canvas.height = sourceCanvas.height;
-
-  const context = canvas.getContext("2d", {
-    willReadFrequently: true
-  });
-
+  const context = canvas.getContext("2d", { willReadFrequently: true });
   context.drawImage(sourceCanvas, 0, 0);
-
-  const imageData = context.getImageData(
-    0,
-    0,
-    canvas.width,
-    canvas.height
-  );
-
+  const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
   const pixels = imageData.data;
 
   for (let index = 0; index < pixels.length; index += 4) {
@@ -170,10 +185,9 @@ function makeContrastVariant(sourceCanvas) {
       0.299 * pixels[index] +
       0.587 * pixels[index + 1] +
       0.114 * pixels[index + 2];
-
     const contrasted = Math.max(
       0,
-      Math.min(255, (gray - 128) * 1.45 + 128)
+      Math.min(255, (gray - 128) * 1.38 + 128)
     );
 
     pixels[index] = contrasted;
@@ -210,7 +224,7 @@ export async function scanPlate({
   video,
   guideElement,
   allowedVehicles,
-  frameCount = 2,
+  frameCount = 3,
   onStatus,
   onProgress
 }) {
@@ -218,35 +232,34 @@ export async function scanPlate({
     throw new Error("Kamera vēl nav gatava.");
   }
 
-  onStatus?.("Uzņem attēlu…");
+  const frames = [];
+
+  for (let index = 0; index < frameCount; index += 1) {
+    onStatus?.(`Uzņem kadru ${index + 1}/${frameCount}`);
+    await nextPaint();
+    frames.push(captureFrame(video, guideElement));
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+
+  onStatus?.("Izvēlas asākos kadrus…");
   await nextPaint();
 
-  const firstFrame = captureFrame(video, guideElement);
-
-  await new Promise((resolve) => setTimeout(resolve, 180));
-
-  const secondFrame =
-    frameCount > 1
-      ? captureFrame(video, guideElement)
-      : firstFrame;
-
-  onStatus?.("Sagatavo OCR…");
-  await nextPaint();
-
-  const worker = await getWorker(onProgress);
+  const ranked = frames
+    .map((canvas) => ({ canvas, sharpness: estimateSharpness(canvas) }))
+    .sort((a, b) => b.sharpness - a.sharpness);
 
   const images = [
-    firstFrame,
-    makeContrastVariant(secondFrame)
+    ranked[0].canvas,
+    makeContrastVariant(ranked[Math.min(1, ranked.length - 1)].canvas)
   ];
 
+  const worker = await getWorker(onProgress);
   const readings = [];
 
   try {
     for (let index = 0; index < images.length; index += 1) {
       onStatus?.(`OCR analīze ${index + 1}/${images.length}`);
       await nextPaint();
-
       const result = await recognizeWithTimeout(worker, images[index]);
 
       readings.push({
@@ -261,12 +274,7 @@ export async function scanPlate({
   }
 
   const consensus = consensusCandidates(readings);
-
-  const suggestions = rankAgainstAllowed(
-    consensus,
-    allowedVehicles,
-    3
-  );
+  const suggestions = rankAgainstAllowed(consensus, allowedVehicles, 3);
 
   return {
     readings,
