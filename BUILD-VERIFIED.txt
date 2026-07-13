@@ -1,0 +1,4 @@
+Build verified locally on 2026-07-13:
+- npm ci --include=dev --no-audit --no-fund: PASS
+- npm test: PASS (4 tests)
+- npm run build: PASS

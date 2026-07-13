@@ -1,0 +1,26 @@
+PARKING GATE v2.1 — PĀRBAUDĪTA VERSIJA
+
+Šī pakotne tika pārbaudīta ar:
+- npm ci --include=dev --no-audit --no-fund
+- npm test (4/4 testi izpildīti)
+- npm run build (Vite/PWA build izpildīts)
+
+PUBLICĒŠANA
+
+1. GitHub Desktop pārslēdzies uz zaru main.
+2. Repository → Show in Explorer.
+3. Iekopē VISU šīs mapes saturu lokālajā parking-gate mapē.
+4. Izvēlies Replace files in destination.
+5. Neizdzēs lokālo slēpto .git mapi.
+6. GitHub Desktop Summary:
+   Parking Gate v2.1 verified build
+7. Commit to main.
+8. Push origin.
+9. GitHub → Actions → sagaidi zaļus build un deploy.
+10. Atver:
+    https://akarklinss.github.io/parking-gate/?v=21
+
+SVARĪGI
+- stable-v1 zaru neaiztiec; tas paliek kā backup.
+- Apps Script nav jāpārpublicē, ja esošā IN/OUT/LOG sistēma strādā.
+- GitHub Pages Source jābūt GitHub Actions.
