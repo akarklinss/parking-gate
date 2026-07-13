@@ -1,10 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { scanPlate } from "../services/ocrEngine";
 
-export default function CameraScanner({
-  allowedVehicles,
-  onSelectCandidate
-}) {
+export default function CameraScanner({ allowedVehicles, onSelectCandidate }) {
   const videoRef = useRef(null);
   const guideRef = useRef(null);
   const streamRef = useRef(null);
@@ -20,62 +17,90 @@ export default function CameraScanner({
     };
   }, []);
 
-  const startCamera = async () => {
-    setStatus("Ieslēdz kameru…");
+  const stopCurrentStream = () => {
     streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
 
-    let stream;
+    if (videoRef.current) {
+      videoRef.current.pause();
+      videoRef.current.srcObject = null;
+    }
+  };
+
+  const startCamera = async () => {
+    setCameraReady(false);
+    setSuggestions([]);
+    setStatus("Ieslēdz kameru…");
+    stopCurrentStream();
 
     try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: "environment" },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
-        },
-        audio: false
-      });
-    } catch {
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: false
-      });
+      let stream;
+
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 }
+          },
+          audio: false
+        });
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false
+        });
+      }
+
+      streamRef.current = stream;
+
+      const video = videoRef.current;
+      video.srcObject = stream;
+      video.muted = true;
+      video.playsInline = true;
+      video.setAttribute("playsinline", "");
+      video.setAttribute("webkit-playsinline", "");
+      video.disablePictureInPicture = true;
+
+      await video.play();
+
+      try {
+        const track = stream.getVideoTracks()[0];
+        const capabilities = track.getCapabilities?.() || {};
+        const advanced = [];
+
+        if (capabilities.focusMode?.includes("continuous")) {
+          advanced.push({ focusMode: "continuous" });
+        }
+
+        if (capabilities.zoom) {
+          const zoom = Math.min(
+            capabilities.zoom.max,
+            Math.max(capabilities.zoom.min, capabilities.zoom.min + 1)
+          );
+          advanced.push({ zoom });
+        }
+
+        if (advanced.length) {
+          await track.applyConstraints({ advanced });
+        }
+      } catch {
+        // Fokusa un zoom vadība nav obligāta.
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 250));
+
+      setCameraReady(true);
+      setStatus("Kamera gatava. Numurzīmi ievieto baltajā rāmī.");
+    } catch (error) {
+      stopCurrentStream();
+      setCameraReady(false);
+      setStatus(`Kameras kļūda: ${error.message}`);
     }
-
-    streamRef.current = stream;
-    videoRef.current.srcObject = stream;
-    await videoRef.current.play();
-
-    try {
-      const track = stream.getVideoTracks()[0];
-      const capabilities = track.getCapabilities?.() || {};
-      const advanced = [];
-
-      if (capabilities.focusMode?.includes("continuous")) {
-        advanced.push({ focusMode: "continuous" });
-      }
-
-      if (capabilities.zoom) {
-        const zoom = Math.min(
-          capabilities.zoom.max,
-          Math.max(capabilities.zoom.min, capabilities.zoom.min + 1)
-        );
-        advanced.push({ zoom });
-      }
-
-      if (advanced.length) {
-        await track.applyConstraints({ advanced });
-      }
-    } catch {
-      // Ierīce neatbalsta manuālu fokusēšanu vai zoom.
-    }
-
-    setCameraReady(true);
-    setStatus("Kamera gatava. Numurzīmi ievieto baltajā rāmī.");
   };
 
   const runScan = async () => {
-    if (!cameraReady) return;
+    if (!cameraReady || scanning) return;
 
     setScanning(true);
     setSuggestions([]);
@@ -113,16 +138,25 @@ export default function CameraScanner({
   return (
     <section className="card camera-card">
       <div className="camera-wrap">
-        <video ref={videoRef} autoPlay playsInline muted />
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted
+          controls={false}
+          disablePictureInPicture
+        />
         <div ref={guideRef} className="plate-guide" />
       </div>
 
       <div className="camera-buttons">
-        <button onClick={startCamera}>
+        <button type="button" onClick={startCamera}>
           📷 {cameraReady ? "Restartēt kameru" : "Sākt kameru"}
         </button>
+
         <button
-          className="accent"
+          type="button"
+          className="accent scan-button"
           disabled={!cameraReady || scanning}
           onClick={runScan}
         >
@@ -136,6 +170,7 @@ export default function CameraScanner({
         <div className="candidate-list">
           {suggestions.map((candidate) => (
             <button
+              type="button"
               key={candidate.plate}
               className="candidate-button"
               onClick={() => onSelectCandidate(candidate.plate, "OCR_MATCH")}
