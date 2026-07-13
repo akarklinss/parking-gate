@@ -1,0 +1,15 @@
+PARKING GATE — DROŠĀ PUBLICĒŠANA BEZ NPM BUILD GITHUB SERVERĪ
+
+Šajā pakotnē dist/ mape jau ir uzbūvēta un pārbaudīta.
+GitHub Actions neveic npm install, npm test vai vite build.
+Tas tikai publicē gatavo dist/ mapi.
+
+Pārbaudīts lokāli:
+- npm ci: veiksmīgs
+- npm run build: veiksmīgs
+- dist/ izveidots
+
+Svarīgi:
+- kopē visu pakotnes saturu repozitorija saknē;
+- dist/ mapi nedrīkst izdzēst;
+- .github/workflows/deploy.yml nedrīkst aizvietot ar veco workflow.

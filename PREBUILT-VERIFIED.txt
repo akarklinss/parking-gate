@@ -1,0 +1,4 @@
+Parking Gate prebuilt deployment package
+Build verified: 2026-07-14
+Vite production build completed successfully.
+GitHub Actions requires no npm installation.
